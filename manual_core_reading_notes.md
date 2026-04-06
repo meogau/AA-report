@@ -491,55 +491,305 @@ Nguyên tắc:
 ### Kết luận đã chốt
 
 - Ý nghĩa chung
-  Đây là action accrual thực sự của property `INTEREST`.
-  File `AA.INTEREST.ACCRUE.b` là routine điều phối theo activity và trạng thái.
-  File `AA.ACCRUE.INTEREST.b` là routine tính toán accrual amount cho một property tới `ACCRUE.TO.DATE`, trả về phần accrual chi tiết và số tiền commit theo kỳ kế toán.
+  Đây là action tính accrual thật của property `INTEREST`.
+  Nó không chỉ “gọi routine accrual”, mà đi qua 4 lớp:
+  - xác định có được accrue không và accrue tới ngày nào,
+  - tính accrual amount thật bằng engine `AA.ACCRUE.INTEREST`,
+  - dựng bút toán accrual/suspend,
+  - cập nhật `AA.INTEREST.ACCRUALS.WORK` hoặc `AA.INTEREST.ACCRUALS`, và nếu property dùng accrue-by-bills thì cập nhật cả bill.
 
-- Các bước khung đã chốt từ `AA.INTEREST.ACCRUE.b`
+- Bảng/record đã thấy routine đọc hoặc cập nhật
+  - đọc `AA.INTEREST.ACCRUALS` / `AA.INTEREST.ACCRUALS.WORK`
+    qua `AA.Interest.GetInterestAccruals(...)`
+  - đọc `AA.ARRANGEMENT`
+    để lấy `ArrCurrency`, `ArrStartDate`, product
+  - đọc customer của arrangement
+    qua `AA.Customer.GetArrangementCustomer(...)`
+  - đọc `PRODUCT` published record
+    để lấy source calc type và tier source calc type
+  - đọc repayment details của balance accrual
+    qua `AA.Interest.GetBalanceRepaymentDetails(...)`
+  - đọc base balance / principal movements
+    qua `AA.Framework.GetBaseBalance(...)`
+  - đọc bill unpaid
+    qua `AA.PaymentSchedule.GetBill(...)`
+  - cập nhật `AA.INTEREST.ACCRUALS.WORK` khi `ACCT.TYPE = VAL`
+  - cập nhật `AA.INTEREST.ACCRUALS` khi `ACCT.TYPE = AUT`
+    cả hai đều qua `AA.Interest.UpdateInterestAccruals(...)`
+  - cập nhật bill accrual amount
+    qua `AA.Interest.AccrueBills(...)`
+  - đẩy/xóa/auth accounting
+    qua `AA.Accounting.AccountingManager(...)`
+
+- Các bước chi tiết theo source `AA.INTEREST.ACCRUE.b`
   1. `SET.ACTIVITY.DETAILS`
-     Lấy trạng thái activity, full status, activity id, action, effective date, arrangement id, property class id, property id, activity id hiện tại.
-  2. `CHECK.CHARGEOFF.STATUS`
-     Gọi `AA.Interest.GetAccrualProcessTypes(...)` và `AA.ChargeOff.GetChargeoffDetails(...)` để biết contract đang ở trạng thái chargeoff nào.
-  3. `DETERMINE.DELETE.PROCESS.REQUIRED`
-     Xác định có cần xóa/khôi phục accrual khi delete/reverse hay không.
-  4. `MAIN.PROCESS`
-     Rẽ nhánh theo trạng thái input, delete, auth, reverse.
-  5. Trong nhánh input:
-     - `INITIALISE`
-     - `SET.PAYOFF.FLAG`
-     - `GET.PARTICIPANT.FLAG`
-     - `CHECK.SUSPENSION`
-     - `PROCESS.ACCRUAL`
-  6. `PROCESS.ACCRUAL`
-     - xác định kỳ bắt đầu/kết thúc (`GET.PERIOD.START.END.DATE`)
-     - xác định `ACCRUE.TO.DATE` (`GET.ACCRUE.TO.DATE`)
-     - lấy hoặc chuẩn bị accrual details hiện tại (`AA.Interest.GetInterestAccruals`)
-     - nếu có projection thì lấy projection accruals (`AA.Interest.GetProjectionAccruals`)
-     - nếu cần tính accrual thật thì gọi `AA.Interest.AccrueInterest(...)`, thực chất map tới routine `AA.ACCRUE.INTEREST.b`
-  7. Sau tính toán:
-     - nếu accrue by bills thì đi nhánh `GET.ACCRUAL.BILLS` / `BILL.INTEREST.UPDATE`
-     - nếu cần cập nhật file accrual thì gọi `AA.Interest.UpdateInterestAccruals(...)`
-     - nếu có accounting event thì gọi `AA.Accounting.AccountingManager(...)`
+     Routine lấy từ common:
+     - `R.ACTIVITY.STATUS`
+     - `R.ACTIVITY.FULL.STATUS`
+     - `ARR.ACTIVITY.ID`
+     - `R.ACTIVITY`
+     - `ACTIVITY.ACTION`
+     - `EFFECTIVE.DATE`
+     - `ARRANGEMENT.ID`
+     - `PROPERTY.CLASS`
+     - `PROPERTY`
+     - `ACTIVITY.ID`
+     Đồng thời đọc:
+     - `SUPRESS.FLAG = EB.SystemTables.getRNew(IntSuppressAccrual)`
+     - `ACCOUNTING.MODE = EB.SystemTables.getRNew(IntAccountingMode)`
+     - danh sách subtype cần accrue bằng `AA.Interest.GetAccrualProcessTypes(ARRANGEMENT.ID, ACCRUE.PROCESS.TYPES)`
+  2. `MAIN.PROCESS`
+     Routine lặp từng `SUB.TYPE` trong `ACCRUE.PROCESS.TYPES`.
+     Với từng subtype:
+     - nếu là payoff + full chargeoff + `ACCOUNTING.MODE = UPFRONT.PROFIT` + subtype `CO` thì bỏ subtype `CO`
+     - nếu subtype còn lại có record accrual thì mới xử lý tiếp
+  3. `DO.ACCRUAL.PROCESSING`
+     Nếu `SUB.TYPE` có giá trị, routine đọc accrual record hiện tại bằng:
+     `AA.Interest.GetInterestAccruals("VAL", ARRANGEMENT.ID, PROPERTY, "", "", R.ACCRUAL.DETAILS, "", SUB.TYPE)`
+     Từ record này nó lấy:
+     - cờ `ABB.NEW.METHOD = IntAccAbbNewMethod`
+     - các period dates
+     - tổng accrual hiện có
+     Nếu không có `R.ACCRUAL.DETAILS` thì bỏ qua cả subtype, nghĩa là subtype đó không có accrual processing.
+  4. `PROCESS.ACTION`
+     Rẽ nhánh theo status:
+     - `UNAUTH`: `PROCESS.TYPE = UPDATE`, vào `PROCESS.INPUT.ACTION`
+     - `DELETE`: vào `PROCESS.DELETE.ACTION`
+     - `AUTH`: vào `PROCESS.AUTHORISE.ACTION`
+     - `DELETE-REV`: vào `PROCESS.REVERSE.DELETE.ACTION`
+     - `REVERSE`: nhánh này không làm gì thêm trong file hiện tại
+     Sau nhánh status, nếu không lỗi và `ACCT.TYPE` có giá trị:
+     - nếu `SUB.TYPE <> INFO.ONLY` thì gọi `PROCESS.ACCOUNTING`
+     - luôn gọi `UPDATE.FILES`
+  5. `INITIALISE`
+     Reset toàn bộ biến chạy:
+     - `RET.ERROR`, `PROCESS.ERROR`
+     - `PROCESS.TYPE`
+     - `EVENT.AMT`
+     - `RECORD.START.DATE`
+     - `PERIOD.START.DATE`
+     - `PERIOD.END.DATE`
+     - `ACCRUE.TO.DATE`
+     - `ACCT.EVENT.ARRAY`
+     - `STORE.ACCT.EVENT.ARRAY`
+     - `R.ACCRUAL.DATA`
+     - `R.ACCRUAL.DETAILS`
+     - `ACCT.TYPE`
+     - `PROPERTY.DETAILS`
+     - `LAST.ACCRUE.DATE`
+     - `PROJECTION.INFO`
+     - `COMMITTED.INT`
+     - `TOT.SUS.AMT`
+     - `TOT.ACCR.AMT`
+     - `ACCRUAL.TYPE`
+     - `RESTORE.BILLS`
+     Đồng thời:
+     - lấy `R.INTEREST.RECORD = R.NEW`
+     - set `INTEREST.PROPERTY.RECORD = LOWER(R.INTEREST.RECORD)`
+     - lấy `INT.PROP = object của activity`
+     - lấy `ORIGINAL.INT = phần sau dấu * của property alternate`
+     - map equate field của accruals bằng `AA.Interest.GetInterestAccrualsFields(...)`
+     - set mặc định `RECORD.START.DATE = ArrStartDate` của arrangement
+     - nạp participant common bằng `AA.Participant.GetParticipantsCommon(...)`
+  6. `PROCESS.INPUT.ACTION`
+     - set `ACCT.TYPE = VAL`
+     - đọc/chuẩn bị accrual work record bằng
+       `AA.Interest.GetInterestAccruals("VAL", ARRANGEMENT.ID, PROPERTY, PERIOD.START.DATE, "", R.ACCRUAL.DETAILS, "", SUB.TYPE)`
+     - nếu không có participant thì gọi `CHECK.SUSPENSION`
+     - gọi `AA.Interest.GetProjectionAccruals(...)`
+       để xem kỳ này đã có projection accrual sẵn chưa
+     - nếu `PROJECTION.INFO` rỗng thì mới đi tiếp vào `PROCESS.ACCRUAL`
+  7. `CHECK.SUSPENSION`
+     Routine gọi `AA.Interest.GetInterestPropertyType(...)` để lấy:
+     - `ARRANGEMENT.SUSPEND`
+     - `SUSPEND.OVERDUES`
+     - `SUSPEND.START.DATE`
+     - `ACCRUAL.TYPE`
+     Nhưng nếu `SUB.TYPE <> BANK` thì nó xóa ngay 3 biến suspend này.
+     Kết luận: logic suspended accrual chỉ áp cho subtype `BANK`.
+  8. `GET.PERIOD.START.END.DATE`
+     Không tự tính period bằng tay.
+     Routine gọi:
+     `AA.Interest.GetPeriodStartEndDates(SUB.TYPE, R.ACCRUAL.DETAILS, PERIOD.START.DATE, PERIOD.END.DATE)`
+     Nghĩa là period start/end được lấy trực tiếp từ record accrual đang mở.
+  9. `GET.ACCRUE.TO.DATE`
+     Đây là đoạn quyết định ngày cuối để accrue:
+     - nếu `SUPRESS.FLAG = ALTERNATE` và property hiện tại không phải original interest thì `PROCESS.ACCRUAL = 0`
+     - nếu activity `AGE`, chỉ accrue khi `AA$ACCR.DETS` đã có ngày ép sẵn cho property đó
+     - nếu là payoff hoặc master class:
+       - `WRITE.OFF-BALANCE.MAINTENANCE`
+       - `WRITE.OFF.BALANCE-BALANCE.MAINTENANCE`
+       - `AUTO.SETTLE-ARRANGEMENT`
+       - `CHARGEOFF-ARRANGEMENT`
+       thì mặc định lấy `ACCRUE.TO.DATE = EFFECTIVE.DATE`
+       rồi có thể giảm `-1C`:
+       - luôn giảm cho product line `ACCOUNTS`
+       - với line khác, giảm khi không phải đúng kỳ schedule hoặc rơi vào cooling-period case
+     - nếu activity là `APPLYPAYMENT`, `SUSPEND`, `ADJUST.BALANCE`, `ADJUST.ALL`, `MAINTAIN`
+       thì lấy `ACCRUE.TO.DATE = EFFECTIVE.DATE`
+       nhưng nếu là forward-date online/service và không simulation thì thay bằng system date
+       sau đó luôn giảm `-1C`
+     - nếu activity `CAPITALISE` hoặc `MAKEDUE` do user khởi tạo thì lấy thẳng `ACCRUE.TO.DATE = EFFECTIVE.DATE`
+     - nếu activity là `MAKEDUE`, `CAPITALISE`, `DEFER.MAKEDUE`, `DEFER.CAPITALISE`
+       thì chỉ accrue khi `IntAccPeriodEnd` hiện tại đúng bằng `EFFECTIVE.DATE`
+       nếu không đúng thì `PROCESS.ACCRUAL = 0`
+     - nếu là alternate interest sau khi period đã cycle thì routine còn sửa:
+       - `R.ACCRUAL.DATA<EbAcToDate>`
+       - `PERIOD.START.DATE`
+       - `PERIOD.END.DATE`
+       để chỉ accrue đúng period cần thiết
+  10. `PROCESS.ACCRUAL`
+      Nếu arrangement đang suspended và `SUSPEND.START.DATE >= PERIOD.START.DATE` thì routine tách 2 pha:
+      - pha 1: accrue bình thường tới `SUSPEND.START.DATE - 1C`
+      - pha 2: accrue phần còn lại trong trạng thái suspend
+      Ở mỗi pha, nếu cần tính thật, routine gọi:
+      `AA.Interest.AccrueInterest(ARRANGEMENT.ID, PROPERTY, "", PERIOD.START.DATE, PERIOD.END.DATE, ACCRUE.TO.DATE, R.ACCRUAL.DATA, R.ACCRUAL.DETAILS, COMMITTED.INT, "", SUB.TYPE, RET.ERROR)`
+      Nếu `ACCRUAL.TYPE = BILLS`:
+      - với `ABB.NEW.METHOD`, `R.ACCRUAL.DETAILS<1>` chứa list bill, `R.ACCRUAL.DETAILS<2>` chứa detail record của từng bill, `R.ACCRUAL.DATA` chứa accrual data của từng bill
+      - routine lặp bill và cập nhật bill riêng
+      - với cách cũ, nếu tổng `COMMITTED.INT<2> + <3> + <4>` khác 0 thì update bill trực tiếp
+  11. `BUILD.EVENTS`
+      Nếu `COMMITTED.INT<1>` có dữ liệu, routine gọi:
+      `AA.Interest.BuildAccrualEvent(ARRANGEMENT.ID, PARTICIPANT.INFO, PROPERTY, SUB.TYPE, ARRANGEMENT.SUSPEND, ACCRUE.ONLY, COMMITTED.INT, TOT.ACCR.AMT, TOT.SUS.AMT, ACCT.EVENT.ARRAY)`
+      Kết quả:
+      - `TOT.ACCR.AMT` là tổng accrual update cho property
+      - `TOT.SUS.AMT` là tổng suspended accrual
+      - `ACCT.EVENT.ARRAY` là mảng event accounting
+      Sau đó set `ACCT.TYPE = VAL` và append event vào `STORE.ACCT.EVENT.ARRAY`
+  12. `PROCESS.ACCOUNTING`
+      - nếu `ACCT.TYPE = VAL` và có `STORE.ACCT.EVENT.ARRAY` thì gọi
+        `AA.Accounting.AccountingManager("VAL", "", "", "", STORE.ACCT.EVENT.ARRAY, RET.ERROR)`
+      - nếu `ACCT.TYPE = AUT` hoặc `DEL` thì gọi `AccountingManager` ở mode tương ứng mà không truyền event array mới
+  13. `UPDATE.FILES`
+      Routine chuẩn bị:
+      - `PROPERTY.DETAILS<1> = PROPERTY`
+      - `PROPERTY.DETAILS<2> = INTEREST.PROPERTY.RECORD`
+      Nếu đang projection + accrue-by-bills method mới + `ACCT.TYPE` là `VAL/AUT` thì:
+      - lấy list unpaid bills
+      - update record accrual từng bill trước
+      - set `UPD.MODE<8> = MASTER`
+      Sau đó update record tổng arrangement-property bằng:
+      `AA.Interest.UpdateInterestAccruals(ACCT.TYPE, ARRANGEMENT.ID, PROPERTY.DETAILS, R.ACCRUAL.DATA, R.ACCRUAL.DETAILS, PERIOD.START.DATE, "", "", TOT.ACCR.AMT, TOT.SUS.AMT, "", "", "", "", "", UPD.MODE, SUB.TYPE)`
+      Đây là điểm ghi chính của action:
+      - `VAL` ghi vào `AA.INTEREST.ACCRUALS.WORK`
+      - `AUT` ghi vào `AA.INTEREST.ACCRUALS`
+      - `DEL` xóa/đảo update tương ứng
+  14. `UPDATE.BILL.DETAILS`
+      Nếu action đang ở mode accrue-by-bills, routine tính:
+      - `NEW.INTEREST.AMOUNT = COMMITTED.INT<2> + COMMITTED.INT<3> + COMMITTED.INT<4>`
+      - nếu arrangement suspended và không phải pha trước ngày suspend thì
+        `NEW.SUSPEND.AMOUNT = NEW.INTEREST.AMOUNT`
+        ngược lại bằng `0`
+      Sau đó gọi:
+      `AA.Interest.AccrueBills(ARRANGEMENT.ID, PROCESS.TYPE, PROPERTY, ACCRUE.TO.DATE, R.ACCRUAL.DATA, NEW.INTEREST.AMOUNT, NEW.SUSPEND.AMOUNT, "", LAST.ACCRUE.DATE, LAST.ACCRUE.SPLIT.AMT, SUB.TYPE, RET.ERROR)`
+      Nghĩa là bill được cập nhật bởi API này, không phải `WRITE` trực tiếp trong routine.
+  15. `BILL.INTEREST.UPDATE`
+      Với method billwise mới, routine lặp từng `BILL.REFERENCE`:
+      - nạp `R.ACCRUAL.DETAILS` bill hiện tại
+      - nạp `R.ACCRUAL.DATA` bill hiện tại
+      - nạp `COMMITTED.INT` bill hiện tại
+      - gọi `UPDATE.BILL.DETAILS`
+      - tính:
+        - `TOT.ACCR.BILL.AMT = <2> + <3> + <4>`
+        - `TOT.POS.ACCR.AMT = <5> + <7> + <9>`
+        - `TOT.NEG.ACCR.AMT = <6> + <8> + <10>`
+      - ghi record accrual bill riêng bằng `UPDATE.ACCRUE.BILL.FILES`
+      Sau vòng lặp, routine cộng dồn lại `STORE.COMMITTED.INT` thành record tổng của arrangement-property.
 
-- Những gì đã chốt từ `AA.ACCRUE.INTEREST.b`
-  Routine này là lõi tính toán.
-  Program description xác nhận:
-  - tính accrual tới `ACCRUE.TO.DATE`,
-  - trả về accrual split giữa current month / previous month / previous year,
-  - có thể dùng current accrual data truyền vào hoặc tự đọc lại.
+- Chi tiết tính toán lõi trong `AA.ACCRUE.INTEREST.b`
+  1. `GET.BASIC.DETAILS`
+     - đọc `AA.ARRANGEMENT`
+     - lấy `ArrCurrency`
+     - lấy `ArrStartDate`
+     - lấy product id từ `ArrProduct`
+     - lấy customer bằng `AA.Customer.GetArrangementCustomer(...)`
+     - gọi `AA.Interest.GetInterestAccruals("VAL", ...)` để lấy `NEW.ACCRUAL.DATA` và `R.ACCRUAL.DETAILS`
+     - nếu property mới được thêm trong change product, nó sửa `RECORD.START.DATE = IntAccPeriodStart` của record đầu tiên
+  2. `GET.SOURCE.BAL.TYPE`
+     - đọc published `PRODUCT`
+     - locate property trong `PrdCalcProperty`
+     - lấy `PrdSourceType` và `TierSourceType`
+     - đọc `SOURCE.CALC.TYPE`
+     - nếu source calc hoặc tier source calc không phải `DAILY` thì set `BAL.ADJ.REQ = 1`
+     Kết luận: với average/highest/lowest balance, routine sẽ còn phải điều chỉnh lại phần accrual đã tính trước trong kỳ.
+  3. `BUILD.PREVIOUS.ACCRUALS`
+     - nếu `R.ACCRUAL.DATA` chưa có thì lấy từ `NEW.ACCRUAL.DATA`
+     - nếu projection mà contract chưa disburse thì xóa sạch vùng accrual data để engine tính lại từ đầu
+     - nếu `BAL.ADJ.REQ = 1` thì gọi `GET.PREV.ACCRUED.INT`
+  4. `GET.PREV.ACCRUED.INT`
+     - đọc `ACCRUAL.PARAM.ID = IntAccrualRule` từ interest record
+     - gọi `AA.Interest.GetAccrualStartEndDate(...)`
+     - gọi `GET.CURRENT.PERIOD`
+     - locate current accrual period trong `R.ACCRUAL.DETAILS`
+     - gọi `AA.Interest.AdjustInterestAccruals(...)`
+     - tính `TOT.ADJ.INT`
+     - phần này được dùng để trừ lại accrual đã tính trước đó trong cùng cap period
+  5. `BUILD.INTEREST.DATA`
+     - gọi `AA.Interest.BuildInterestInfo(...)`
+     - lấy:
+       - `INT.DATA`
+       - `INT.BASIS`
+       - `ACCRUAL.RULE`
+       - `SUPPRESS.DETAILS`
+     - nếu là final accrual thì:
+       - locate `IntAccProfitAmt` theo `IntAccEffectiveDate = ACCRUE.TO.DATE`
+       - gọi `AA.Interest.GetAdjustedInterestAmount(...)`
+       - gọi `AA.Interest.GetBalanceAdjustmentAmount(..., "ACC", ..., "ADJUST", ...)`
+       - tính `FIXED.INTEREST = PROFIT.AMOUNT - PAST.PROFIT.AMOUNT`
+     - nếu user/manual fixed interest có sẵn trong accrual detail (`IntAccFixedIntAmt`) thì nạp vào `INT.DATA<EbAciIntAmt>`
+  6. `BUILD.PRINCIPAL.DATA`
+     - gọi `AA.Framework.GetBaseBalance(...)`
+     - trả ra `PRIN.DATA`
+     - nếu `SUPPRESS.FLAG = YES`, `INFO.ONLY`, hoặc property control là `SUPPRESS`
+       thì routine chèn/sửa các dòng trong `PRIN.DATA` và đưa principal amount về `0`
+     Ý nghĩa: vẫn cho phép tính info accrual nhưng không tạo accrual thật cần post.
+  7. `GET.REPAYMENT.DETAILS`
+     - xác định balance type accrual bằng `PropertyGetBalanceName(..., "ACC", ..., SUB.TYPE, BALANCE.TYPE)`
+     - gọi `AA.Interest.GetBalanceRepaymentDetails(ARRANGEMENT.ID, ACCRUAL.START.DATE, ACCRUAL.END.DATE, PROPERTY, BALANCE.TYPE, "PAYMENT":@VM:"ADJUSTMENT", REPAYMENT.DETAILS)`
+     - từ đó build:
+       - `REPAYMENT.DATES`
+       - `REPAYMENT.AMOUNT`
+     để compounding calculation tách nhiều đoạn accrual theo repayment date
+  8. `BUILD.CALC.PERIOD`
+     Routine dựng record `CALC.PERIOD` cho engine accrual:
+     - `EbAcdRecordStart = RECORD.START.DATE`
+     - `EbAcdAccrStart = PERIOD.START.DATE`
+     - `EbAcdAccrEnd = PERIOD.END.DATE`
+     - `EbAcdContractId = CONTRACT.ID`
+     - `EbAcdAccrualParam = ACCRUAL.RULE`
+     - `EbAcdRpyAmt = PREVIOUS.REPAYMENT + REPAY.AMOUNT`
+     Nếu subtype là `CO` và accrual rule là both-days-inclusive tại ngày chargeoff, routine còn giảm `TEMP.PERIOD.START.DATE - 1C`.
+  9. `PERFORM.ACCRUALS`
+     Đây là điểm gọi engine thật:
+     `AC.Fees.EbCalculateAccrual(R.ACCRUAL.DATA, PRIN.DATA, INT.DATA, CALC.PERIOD, CONT.CURRENCY, CONT.CUSTOMER, INT.BASIS, ACCRUE.TO.DATE, THIS.MTH.ACCR, PREV.MTH.ACCR, PREV.YEAR.ACCR, TOTAL.INTEREST, ADDITIONAL.INFO)`
+     Output từ engine:
+     - `THIS.MTH.ACCR`
+     - `PREV.MTH.ACCR`
+     - `PREV.YEAR.ACCR`
+     - `TOTAL.INTEREST`
+     - `ADDITIONAL.INFO`
+  10. `SPLIT.ACCRUALS`
+      Routine map kết quả engine vào `COMMITTED.INT`:
+      - `<1> = TOTAL.INTEREST`
+      - `<2> += THIS.MTH.ACCR`
+      - `<3> += PREV.MTH.ACCR`
+      - `<4> += PREV.YEAR.ACCR`
+      - `<5..10> += ADDITIONAL.INFO<1..6>`
+      Nghĩa là positive/negative split cũng được engine trả ra và cộng dồn vào cùng mảng `COMMITTED.INT`.
+  11. `ADJUST.ACCRUED.INT`
+      Nếu `BAL.ADJ.REQ = 1` thì routine trừ `ADJUSTED.INT` khỏi `COMMITTED.INT<1..10>`.
+      Đây là bước tránh cộng trùng accrual trong kỳ với balance source không phải daily.
 
-  Từ source đã chốt được các vai trò đầu vào:
-  - `CONTRACT.ID`: arrangement id
-  - `PROPERTY`: property cần accrual
-  - `PERIOD.START.DATE`, `PERIOD.END.DATE`: kỳ interest hiện tại
-  - `ACCRUE.TO.DATE`: ngày cuối để tính accrual
-  - `R.ACCRUAL.DATA`, `R.ACCRUAL.DETAILS`: dữ liệu accrual hiện có
-  - `FIXED.INT`: lãi cố định cho linear accrual
-  - `COMMITTED.INT`: mảng kết quả số tiền accrual tách theo bucket kế toán
-
-- Điểm cần đọc tiếp để hoàn tất mô tả action `ACCRUE`
-  - các para bên trong `AA.ACCRUE.INTEREST.b` nơi gọi sang balance basis / perform accrual / update principal data
-  - `AA.Interest.UpdateInterestAccruals(...)` map sang file đích để chốt “update bảng nào, trường nào”
+- Nhánh `DELETE` / `AUTH`
+  - `DELETE`
+    - nếu `DELETE.REQUIRED` thì `ACCT.TYPE = DEL`
+    - nếu billwise method mới thì lấy unpaid `DUE` bills bằng `AA.PaymentSchedule.GetBill(...)`
+    - dùng `RESTORE.BILL.DETAILS` để đọc live accrual bill record rồi gọi `AA.Interest.AccrueBills(..., "RESTORE", ...)`
+    - sau đó `UpdateInterestAccruals("DEL", ...)` và `AccountingManager("DEL", ...)`
+  - `AUTH`
+    - `ACCT.TYPE = AUT`
+    - nếu billwise method mới thì lấy unpaid `DUE` bills và update accrual bill record
+    - sau đó `UpdateInterestAccruals("AUT", ...)` và `AccountingManager("AUT", ...)`
 
 ### Action: UPDATE INTEREST
 
