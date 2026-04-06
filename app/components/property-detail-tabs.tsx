@@ -11,7 +11,11 @@ function FieldsTab({ fields }: { fields: PropertyField[] }) {
       {fields.map((field) => (
         <article className="detail-card" key={field.name}>
           <strong>{field.name}</strong>
-          <p>{field.meaning}</p>
+          <div className="detail-list">
+            {field.details.map((detail, index) => (
+              <p key={`${field.name}-${index}`}>{detail}</p>
+            ))}
+          </div>
         </article>
       ))}
     </div>
@@ -24,15 +28,30 @@ function ActionsTab({ actions }: { actions: PropertyAction[] }) {
       {actions.map((action) => (
         <article className="detail-card" key={action.name}>
           <strong>{action.name}</strong>
+          {action.routine ? (
+            <p>
+              <b>Routine nguồn:</b> {action.routine}
+            </p>
+          ) : null}
           <p>
             <b>Ý nghĩa:</b> {action.summary}
           </p>
-          <p>
-            <b>Các bước:</b> {action.steps}
-          </p>
-          <p>
-            <b>Luồng xử lý:</b> {action.flow}
-          </p>
+          <div className="detail-subsection">
+            <b>Các bước thực hiện:</b>
+            <ol className="number-list">
+              {action.steps.map((step, index) => (
+                <li key={`${action.name}-step-${index}`}>{step}</li>
+              ))}
+            </ol>
+          </div>
+          <div className="detail-subsection">
+            <b>Luồng xử lý nổi bật:</b>
+            <ul className="plain-list">
+              {action.flow.map((step, index) => (
+                <li key={`${action.name}-flow-${index}`}>{step}</li>
+              ))}
+            </ul>
+          </div>
         </article>
       ))}
     </div>

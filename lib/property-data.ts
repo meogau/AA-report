@@ -2,14 +2,16 @@ import propertyData from "@/data/property-data.json";
 
 export type PropertyField = {
   name: string;
-  meaning: string;
+  slot: number;
+  details: string[];
 };
 
 export type PropertyAction = {
   name: string;
+  routine: string;
   summary: string;
-  steps: string;
-  flow: string;
+  steps: string[];
+  flow: string[];
 };
 
 export type PropertyClass = {
