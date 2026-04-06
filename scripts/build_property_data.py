@@ -80,7 +80,30 @@ def parse_report() -> list[dict]:
     return classes
 
 
+def existing_payload_is_usable() -> bool:
+    if not OUTPUT.exists():
+        return False
+
+    try:
+        payload = json.loads(OUTPUT.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+
+    return bool(payload.get("summary")) and bool(payload.get("items"))
+
+
 def main() -> None:
+    if not SOURCE.exists():
+        if existing_payload_is_usable():
+            print(
+                "Source report not found. Keeping committed data/property-data.json."
+            )
+            return
+        raise FileNotFoundError(
+            f"Missing source report: {SOURCE}. "
+            "Either provide aa_property_final_report.md or commit a valid data/property-data.json."
+        )
+
     classes = parse_report()
     payload = {
         "summary": {
