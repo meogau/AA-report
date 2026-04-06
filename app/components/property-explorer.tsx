@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type PropertySummary = {
   propertyClassCount: number;
@@ -15,25 +16,6 @@ type PropertyListItem = {
   actionCount: number;
 };
 
-type PropertyField = {
-  name: string;
-  meaning: string;
-};
-
-type PropertyAction = {
-  name: string;
-  summary: string;
-  steps: string;
-  flow: string;
-};
-
-type PropertyDetail = {
-  name: string;
-  slug: string;
-  fields: PropertyField[];
-  actions: PropertyAction[];
-};
-
 type SummaryResponse = {
   ok: boolean;
   summary: PropertySummary;
@@ -46,23 +28,17 @@ type ListResponse = {
   items: PropertyListItem[];
 };
 
-type DetailResponse = {
-  ok: boolean;
-  item: PropertyDetail | null;
-};
-
 export function PropertyExplorer({
   initialSummary
 }: {
   initialSummary: PropertySummary;
 }) {
+  const router = useRouter();
   const [summary, setSummary] = useState(initialSummary);
   const [query, setQuery] = useState("");
   const [showList, setShowList] = useState(false);
   const [suggestions, setSuggestions] = useState<PropertyListItem[]>([]);
-  const [selected, setSelected] = useState<PropertyDetail | null>(null);
   const [loadingList, setLoadingList] = useState(false);
-  const [loadingDetail, setLoadingDetail] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -112,17 +88,9 @@ export function PropertyExplorer({
 
   const visibleSuggestions = useMemo(() => suggestions.slice(0, 10), [suggestions]);
 
-  async function openDetail(slug: string) {
-    setLoadingDetail(true);
+  function openDetail(slug: string) {
     setShowList(false);
-
-    try {
-      const response = await fetch(`/api/property-classes/${slug}`);
-      const payload: DetailResponse = await response.json();
-      setSelected(payload.item);
-    } finally {
-      setLoadingDetail(false);
-    }
+    router.push(`/property-classes/${slug}`);
   }
 
   return (
@@ -191,64 +159,11 @@ export function PropertyExplorer({
         ) : null}
       </div>
 
-      <div className="panel detail-panel">
-        {loadingDetail ? <p className="empty-state">Loading property class...</p> : null}
-
-        {!loadingDetail && !selected ? (
-          <p className="empty-state">
-            Chọn một property class từ danh sách hoặc từ suggestion bên dưới
-            ô tìm kiếm để xem chi tiết.
-          </p>
-        ) : null}
-
-        {selected ? (
-          <div className="detail-content">
-            <div className="detail-head">
-              <div>
-                <span className="eyebrow">Property Class</span>
-                <h3>{selected.name}</h3>
-              </div>
-              <div className="detail-stats">
-                <span>{selected.fields.length} fields</span>
-                <span>{selected.actions.length} actions</span>
-              </div>
-            </div>
-
-            <div className="detail-columns">
-              <section className="detail-section">
-                <h4>Các trường và ý nghĩa</h4>
-                <div className="stack">
-                  {selected.fields.map((field) => (
-                    <article className="detail-card" key={field.name}>
-                      <strong>{field.name}</strong>
-                      <p>{field.meaning}</p>
-                    </article>
-                  ))}
-                </div>
-              </section>
-
-              <section className="detail-section">
-                <h4>Các action và logic chi tiết</h4>
-                <div className="stack">
-                  {selected.actions.map((action) => (
-                    <article className="detail-card" key={action.name}>
-                      <strong>{action.name}</strong>
-                      <p>
-                        <b>Ý nghĩa:</b> {action.summary}
-                      </p>
-                      <p>
-                        <b>Các bước:</b> {action.steps}
-                      </p>
-                      <p>
-                        <b>Luồng xử lý:</b> {action.flow}
-                      </p>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            </div>
-          </div>
-        ) : null}
+      <div className="panel detail-placeholder">
+        <p className="empty-state">
+          Chọn một property class từ danh sách hoặc suggestion để mở trang chi
+          tiết riêng.
+        </p>
       </div>
     </div>
   );

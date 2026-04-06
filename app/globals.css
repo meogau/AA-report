@@ -283,6 +283,10 @@ textarea {
   padding: 24px;
 }
 
+.detail-placeholder {
+  padding: 28px 24px;
+}
+
 .detail-head {
   display: flex;
   justify-content: space-between;
@@ -294,6 +298,12 @@ textarea {
 .detail-head h3 {
   margin: 14px 0 0;
   font-size: 2rem;
+}
+
+.detail-title {
+  margin: 14px 0 0;
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  line-height: 1;
 }
 
 .detail-stats {
@@ -312,6 +322,53 @@ textarea {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
+}
+
+.detail-page-shell {
+  padding: 28px;
+}
+
+.detail-page-body {
+  display: grid;
+  gap: 18px;
+}
+
+.detail-tabs {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.detail-tab {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 12px 16px;
+  cursor: pointer;
+}
+
+.detail-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.detail-tab-panel {
+  min-width: 0;
+}
+
+.back-link {
+  display: inline-flex;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.detail-hero {
+  padding-top: 36px;
 }
 
 .detail-section h4 {
@@ -361,7 +418,8 @@ textarea {
 
   .search-shell,
   .detail-panel,
-  .list-panel {
+  .list-panel,
+  .detail-page-shell {
     padding: 18px;
   }
 }
