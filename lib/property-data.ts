@@ -1,4 +1,5 @@
 import propertyData from "@/data/property-data.json";
+import { manualCoreOverrides } from "@/lib/manual-core-overrides";
 
 export type PropertyField = {
   name: string;
@@ -31,23 +32,29 @@ type PropertyPayload = {
 };
 
 const payload = propertyData as PropertyPayload;
+const items = payload.items.map((item) => manualCoreOverrides[item.slug] ?? item);
+const summary = {
+  propertyClassCount: items.length,
+  actionCount: new Set(items.flatMap((item) => item.actions.map((action) => action.name))).size,
+  totalActionEntries: items.reduce((total, item) => total + item.actions.length, 0)
+};
 
 export function getPropertySummary() {
-  return payload.summary;
+  return summary;
 }
 
 export function getPropertyClasses() {
-  return payload.items;
+  return items;
 }
 
 export function searchPropertyClasses(query: string) {
   const normalized = query.trim().toLowerCase();
 
   if (!normalized) {
-    return payload.items;
+    return items;
   }
 
-  return payload.items.filter((item) => {
+  return items.filter((item) => {
     const haystack = [
       item.name,
       item.fields.map((field) => field.name).join(" "),
@@ -61,5 +68,5 @@ export function searchPropertyClasses(query: string) {
 }
 
 export function getPropertyClassBySlug(slug: string) {
-  return payload.items.find((item) => item.slug === slug) ?? null;
+  return items.find((item) => item.slug === slug) ?? null;
 }
