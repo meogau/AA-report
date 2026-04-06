@@ -29878,77 +29878,63 @@
           "name": "AA.INT.DAY.BASIS",
           "slot": 4,
           "details": [
-            "Trường nằm ở vị trí `4` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: định dạng `3..C`, kiểu kiểm tra `A`, đối chiếu dữ liệu với bảng `INTEREST.BASIS`.",
-            "Trong `AA.INTEREST.VALIDATE.b`, trường này tham gia điều kiện xử lý: `IF NOT(R.INTEREST.RECORD<AA.Interest.Interest.IntDayBasis>) THEN`.",
-            "Trong `AA.INTEREST.VALIDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `DAY.BASIS = R.CCY<ST.CurrencyConfig.Currency.EbCurInterestDayBasis>`.",
-            "Trong `AA.INTEREST.VALIDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `R.INTEREST.RECORD<AA.Interest.Interest.IntDayBasis> = FIELD(DAY.BASIS,' ',1)`."
+            "Quy định mẫu ngày dùng để tính lãi theo từng ngày, ví dụ 360 hay 365 ngày.",
+            "Nếu người dùng không nhập, `AA.INTEREST.VALIDATE.b` lấy mặc định từ cấu hình tiền tệ `ST.CURRENCY.CONFIG.EbCurInterestDayBasis` rồi ghi lại vào field này.",
+            "Giá trị này được kiểm tra theo bảng `INTEREST.BASIS`, nên đây là đầu vào nền cho mọi phép tính lãi theo ngày của property."
           ]
         },
         {
           "name": "AA.INT.ACCRUAL.RULE",
           "slot": 5,
           "details": [
-            "Trường nằm ở vị trí `5` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: định dạng `35..C`, kiểu kiểm tra `A`, đối chiếu dữ liệu với bảng `EB.ACCRUAL.PARAM`.",
-            "Trong `AA.INTEREST.ADJUST.PARTICIPANT.b`, có câu lệnh thao tác trực tiếp với trường này: `ACCRUAL.RULE = R.INTEREST.RECORD<AA.Interest.Interest.IntAccrualRule> ;* get accrual rule`.",
-            "Trong `AA.INTEREST.ADJUST.b`, có câu lệnh thao tác trực tiếp với trường này: `ACCRUAL.RULE = R.INTEREST.RECORD<AA.Interest.Interest.IntAccrualRule> ;* get accrual rule`.",
-            "Trong `AA.INTEREST.RECORD.b`, có câu lệnh thao tác trực tiếp với trường này: `tmp=EB.SystemTables.getT(AA.Interest.Interest.IntAccrualRule); tmp<3>='NOINPUT'; EB.SystemTables.setT(AA.Interest.Interest.IntAccrualRule, tmp)`."
+            "Chỉ ra bộ quy tắc accrual lấy từ `EB.ACCRUAL.PARAM`: ngày đầu có tính hay không, ngày cuối có tính hay không, và cách engine cộng dồn lãi.",
+            "Khi đã có rate mà field này trống, `AA.INTEREST.VALIDATE.b` báo lỗi bắt buộc; khi record đã tạo rồi thì routine cũng chặn đổi lại rule này.",
+            "Các routine điều chỉnh như `AA.INTEREST.ADJUST.b` và `AA.INTEREST.ADJUST.PARTICIPANT.b` đọc trực tiếp field này để lấy đúng rule accrual trước khi tính lại lãi."
           ]
         },
         {
           "name": "AA.INT.COMPOUND.TYPE",
           "slot": 6,
           "details": [
-            "Trường nằm ở vị trí `6` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: định dạng `15..C`, kiểu kiểm tra `COMPFQU`.",
-            "Trong `AA.INTEREST.VALIDATE.b`, trường này tham gia điều kiện xử lý: `IF R.INTEREST.RECORD<AA.Interest.Interest.IntCompoundYieldMethod> = 'YIELD' AND R.INTEREST.RECORD<AA.Interest.Interest.IntCompoundType> NE 'DAILY' THEN`.",
-            "Trong `AA.INTEREST.VALIDATE.b`, trường này tham gia điều kiện xử lý: `IF R.INTEREST.RECORD<AA.Interest.Interest.IntRateTierType> EQ \"BAND\" AND R.INTEREST.RECORD<AA.Interest.Interest.IntCompoundType> NE \"\" THEN`.",
-            "Trong `AA.INTEREST.VALIDATE.b`, hệ thống gắn lỗi trực tiếp vào trường này; mã lỗi gần nhất là `AA-ICV.NO.BAND.COMPOUND`."
+            "Quy định chu kỳ nhập lãi vào gốc hoặc vào số dư tính lãi, ví dụ theo ngày hay theo tần suất khác.",
+            "Trong `AA.INTEREST.VALIDATE.b`, nếu dùng `COMPOUND.YIELD.METHOD = YIELD` thì field này bắt buộc phải là `DAILY`.",
+            "Code cũng chặn kết hợp `RATE.TIER.TYPE = BAND` với compound, vì banded rate không được phép chạy cùng cơ chế lãi nhập gốc."
           ]
         },
         {
           "name": "AA.INT.NEGATIVE.RATE",
           "slot": 7,
           "details": [
-            "Trường nằm ở vị trí `7` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: định dạng `12..C`, chỉ nhận các giá trị `YES, NO, BLOCK.MARGIN, FLOOR.MARGIN`.",
-            "Trong `AA.INTEREST.ACCOUNTING.METHOD.VALIDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `NEGATIVE.RATE.VALUE = R.INTEREST.RECORD<AA.Interest.Interest.IntTierNegativeRate,TIER.NO> ;* Get the Negative rate value to local variable`.",
-            "Trong `AA.INTEREST.ACCOUNTING.METHOD.VALIDATE.b`, trường này tham gia điều kiện xử lý: `IF NEGATIVE.RATE.VALUE MATCHES \"YES\":@VM:\"BLOCK.MARGIN\" THEN`.",
-            "Trong `AA.INTEREST.NEGATIVE.RATE.VALIDATE.b`, trường này tham gia điều kiện xử lý: `CASE ProductLine EQ \"LENDING\" AND R.INTEREST.RECORD<AA.Interest.Interest.IntTierNegativeRate, TIER.CNT> AND NOT(R.INTEREST.RECORD<AA.Interest.Interest.IntTierNegativeRate, TIER.CNT> MATCHES \"NO\":@VM:\"FLOOR.MARGIN\") AND S`."
+            "Điều khiển cách hệ thống xử lý khi rate tính ra âm: cho phép âm hoàn toàn, chặn phần margin làm rate âm, hoặc chặn xuống dưới mức sàn margin.",
+            "Trong validate, code đọc field này để quyết định có chấp nhận nominal rate âm sau khi cộng index, margin và usage percent hay không.",
+            "Một số product line bị siết chặt hơn; riêng lending không cho nhiều kiểu negative rate, nên field này quyết định trực tiếp việc record có hợp lệ hay không."
           ]
         },
         {
           "name": "AA.INT.RATE.TIER.TYPE",
           "slot": 8,
           "details": [
-            "Trường nằm ở vị trí `8` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: định dạng `6..C`, chỉ nhận các giá trị `SINGLE, BAND, LEVEL`.",
-            "Trong `AA.INTEREST.RATE.TYPE.VALIDATE.b`, trường này tham gia điều kiện xử lý: `IF (R.INTEREST.RECORD<AA.Interest.Interest.IntRateTierType> OR R.INTEREST.RECORD<AA.Interest.Interest.IntLinkedRate>) AND R.INTEREST.RECORD<AA.Interest.Interest.IntRateType> EQ \"\" AND R.INTEREST.RECORD<AA.Interest.Intere`.",
-            "Trong `AA.INTEREST.UPDATE.PARTICIPANT.b`, trường này tham gia điều kiện xử lý: `CASE NOT(R.PREVIOUS.PROP.RECORD<AA.Interest.Interest.IntRateTierType>)`.",
-            "Trong `AA.INTEREST.UPDATE.b`, trường này tham gia điều kiện xử lý: `CASE NOT(R.PREVIOUS.PROP.RECORD<AA.Interest.Interest.IntRateTierType>)`."
+            "Xác định cách áp dụng nhiều mức lãi: một mức duy nhất, chia theo band, hay lấy mức của cả level.",
+            "Các routine validate dùng field này để kiểm tra bộ field đi kèm như `RATE.TYPE`, `TIER.AMOUNT`, `TIER.PERCENT`, và để chặn các tổ hợp không hợp lệ.",
+            "Các routine update cũng so sánh giá trị cũ và mới của field này để biết có phải dựng lại cấu trúc tier và effective rate hay không."
           ]
         },
         {
           "name": "AA.INT.FIXED.RATE",
           "slot": 9,
           "details": [
-            "Trường nằm ở vị trí `9` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: cấu trúc nhóm giá trị `XX<`, định dạng `013..C`, kiểu kiểm tra `R`, chỉ nhận các giá trị `-`.",
-            "Trong `AA.INTEREST.ADVANCE.RESET.b`, routine đang đọc giá trị trường này từ record nhập mới vào biến `NO.TIER`.",
-            "Trong `AA.INTEREST.ADVANCE.RESET.b`, có câu lệnh thao tác trực tiếp với trường này: `NO.TIER = COUNT(AA.Framework.getPrevPropRec()<AA.Interest.Interest.IntFixedRate>,@VM) + 1`.",
-            "Trong `AA.INTEREST.RECORD.b`, có câu lệnh thao tác trực tiếp với trường này: `tmp=EB.SystemTables.getT(AA.Interest.Interest.IntRelationshipFixedRate); tmp<3>='NOINPUT'; EB.SystemTables.setT(AA.Interest.Interest.IntRelationshipFixedRate, tmp)`."
+            "Chứa mức lãi cố định do người dùng nhập cho từng tier.",
+            "Trong `AA.INTEREST.VALIDATE.b`, nếu loại rate người dùng chọn là fixed thì field này là bắt buộc; đồng thời code còn chạy `USAGE.PERCENT.PROCESS` và margin trên chính giá trị này để ra rate cuối.",
+            "Các routine reset và update đọc danh sách giá trị trong field này theo từng tier để tạo lại mức lãi hiệu lực khi điều kiện thay đổi."
           ]
         },
         {
           "name": "AA.INT.FLOATING.INDEX",
           "slot": 10,
           "details": [
-            "Trường nằm ở vị trí `10` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: cấu trúc nhóm giá trị `XX-`, định dạng `4..C`, kiểu kiểm tra `A`, đối chiếu dữ liệu với bảng `BASIC.RATE.TEXT`.",
-            "Trong `AA.INTEREST.ADVANCE.RESET.b`, routine đang đọc giá trị trường này từ record nhập mới vào biến `INT.KEYS<2,-1>`.",
-            "Trong `AA.INTEREST.ADVANCE.RESET.b`, trường này tham gia điều kiện xử lý: `IF AA.Framework.getPrevPropRec()<AA.Interest.Interest.IntFloatingIndex,TIER> THEN`.",
-            "Trong `AA.INTEREST.ADVANCE.RESET.b`, có câu lệnh thao tác trực tiếp với trường này: `INT.KEYS<2,-1> = AA.Framework.getPrevPropRec()<AA.Interest.Interest.IntFloatingIndex,TIER>`."
+            "Chỉ ra mã lãi suất tham chiếu lấy từ `BASIC.RATE.TEXT` để tính floating rate.",
+            "Nếu người dùng chọn kiểu floating mà field này trống, `AA.INTEREST.VALIDATE.b` báo lỗi bắt buộc.",
+            "Các routine reset và update đọc field này để dựng khóa tra cứu index, sau đó tính lại effective rate khi chỉ số thị trường thay đổi."
           ]
         },
         {
@@ -29966,11 +29952,9 @@
           "name": "AA.INT.PERIODIC.INDEX",
           "slot": 12,
           "details": [
-            "Trường nằm ở vị trí `12` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: cấu trúc nhóm giá trị `XX-`, định dạng `004..C`, kiểu kiểm tra `A`.",
-            "Trong `AA.INTEREST.ADVANCE.RESET.b`, có câu lệnh thao tác trực tiếp với trường này: `PERIODIC.INDEX = '' ;* Periodic Index Value`.",
-            "Trong `AA.INTEREST.ADVANCE.RESET.b`, routine đang đọc giá trị trường này từ record nhập mới vào biến `INT.KEYS<2,-1>`.",
-            "Trong `AA.INTEREST.ADVANCE.RESET.b`, trường này tham gia điều kiện xử lý: `IF AA.Framework.getPrevPropRec()<AA.Interest.Interest.IntPeriodicIndex,TIER> THEN`."
+            "Chỉ ra bộ chỉ số dùng cho periodic interest, tức rate chỉ đổi vào các kỳ reset định sẵn thay vì chạy theo từng ngày.",
+            "Nếu người dùng chọn periodic rate mà field này trống, `AA.INTEREST.VALIDATE.b` báo lỗi bắt buộc.",
+            "Trong các routine reset, field này được đưa vào khóa tra cứu index để tạo ra rate mới cho kỳ reset tiếp theo."
           ]
         },
         {
@@ -30065,55 +30049,45 @@
           "name": "AA.INT.MARGIN.TYPE",
           "slot": 21,
           "details": [
-            "Trường nằm ở vị trí `21` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: cấu trúc nhóm giá trị `XX-XX<`, định dạng `15..C`.",
-            "Trong `AA.INTEREST.UPDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `UpdatedMarginType = \"\"`.",
-            "Trong `AA.INTEREST.UPDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `UpdatedMarginType<1,1,IntMarginCount> = TargetElements<AA.Framework.TargetElements.AaTargetElementsValue,1>`.",
-            "Trong `AA.INTEREST.UPDATE.b`, routine đang đọc giá trị trường này từ record nhập mới vào biến `IntUsrMarginType`."
+            "Xác định từng loại margin gắn vào rate gốc, ví dụ margin người dùng nhập hay margin lấy từ pricing target.",
+            "Trong `AA.INTEREST.UPDATE.b`, field này được nạp vào `UpdatedMarginType` để ghép lại cấu trúc margin sau khi đọc target của pricing grid hoặc input trực tiếp.",
+            "Nó đi cùng `MARGIN.OPER` và `MARGIN.RATE`; ba field này tạo thành công thức cộng/trừ/nhân lên rate tham chiếu."
           ]
         },
         {
           "name": "AA.INT.MARGIN.OPER",
           "slot": 22,
           "details": [
-            "Trường nằm ở vị trí `22` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: cấu trúc nhóm giá trị `XX-XX-`, định dạng `9..C`, chỉ nhận các giá trị `ADD, SUB, MULTIPLY`.",
-            "Trong `AA.INTEREST.UPDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `UpdatedMarginOper = \"\"`.",
-            "Trong `AA.INTEREST.UPDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `UpdatedMarginOper<1,1,IntMarginCount> = TargetElements<AA.Framework.TargetElements.AaTargetElementsValue,2>`.",
-            "Trong `AA.INTEREST.UPDATE.b`, routine đang đọc giá trị trường này từ record nhập mới vào biến `IntUsrMarginOper`."
+            "Quy định phép toán áp giữa rate gốc và margin: cộng, trừ hoặc nhân.",
+            "Trong validate và update, hệ thống tách field này song song với `MARGIN.RATE` để truyền vào hàm `AA.Interest.GetInterestNominalRateExtended(...)`.",
+            "Nếu phép toán không khớp với cấu trúc margin đang nhập, effective rate tính ra sẽ khác hẳn nên field này là phần bắt buộc của công thức rate."
           ]
         },
         {
           "name": "AA.INT.MARGIN.RATE",
           "slot": 23,
           "details": [
-            "Trường nằm ở vị trí `23` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: cấu trúc nhóm giá trị `XX-XX>`, định dạng `012..C`, kiểu kiểm tra `R`.",
-            "Trong `AA.INTEREST.UPDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `UpdatedMarginRate = \"\"`.",
-            "Trong `AA.INTEREST.UPDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `UpdatedMarginRate<1,1,IntMarginCount> = GridTargetValue<1,TargCnt>`.",
-            "Trong `AA.INTEREST.UPDATE.b`, routine đang đọc giá trị trường này từ record nhập mới vào biến `IntUsrMarginRate`."
+            "Chứa giá trị margin số học áp lên từng tier của rate.",
+            "Trong `AA.INTEREST.UPDATE.b`, field này có thể đến từ input người dùng hoặc được nạp từ `GridTargetValue` khi pricing grid cấp margin xuống property.",
+            "Validate và update đều truyền field này cùng operand vào `AA.Interest.GetInterestNominalRateExtended(...)` để tính ra effective rate cuối cùng."
           ]
         },
         {
           "name": "AA.INT.TIER.MIN.RATE",
           "slot": 24,
           "details": [
-            "Trường nằm ở vị trí `24` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: cấu trúc nhóm giá trị `XX-`, định dạng `013..C`, kiểu kiểm tra `R`, chỉ nhận các giá trị `-`.",
-            "Trong `AA.INTEREST.UPDATE.b`, routine đang đọc giá trị trường này từ record nhập mới vào biến `MIN.TIER.CAP`.",
-            "Trong `AA.INTEREST.VALIDATE.b`, trường này tham gia điều kiện xử lý: `IF R.INTEREST.RECORD<AA.Interest.Interest.IntTierMinRate,TIER.I> NE '' AND INT.RATE LT R.INTEREST.RECORD<AA.Interest.Interest.IntTierMinRate,TIER.I> THEN`.",
-            "Trong `AA.INTEREST.VALIDATE.b`, trường này tham gia điều kiện xử lý: `IF R.INTEREST.RECORD<AA.Interest.Interest.IntTierMinRate,TIER.I> NE '' AND R.INTEREST.RECORD<EB.SystemTables.getAf(),TIER.I> NE '' THEN`."
+            "Đặt mức sàn cho rate của từng tier.",
+            "Trong validate, sau khi tính ra `INT.RATE`, nếu kết quả thấp hơn field này thì code kéo rate lên bằng đúng mức sàn hoặc dùng nó để kiểm tra giới hạn nhập.",
+            "Trong update, field này được nạp vào biến `MIN.TIER.CAP` và truyền tiếp vào hàm tính nominal/effective rate."
           ]
         },
         {
           "name": "AA.INT.TIER.MAX.RATE",
           "slot": 25,
           "details": [
-            "Trường nằm ở vị trí `25` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: cấu trúc nhóm giá trị `XX-`, định dạng `013..C`, kiểu kiểm tra `R`, chỉ nhận các giá trị `-`.",
-            "Trong `AA.INTEREST.UPDATE.b`, routine đang đọc giá trị trường này từ record nhập mới vào biến `MAX.TIER.CAP`.",
-            "Trong `AA.INTEREST.VALIDATE.b`, trường này tham gia điều kiện xử lý: `IF R.INTEREST.RECORD<AA.Interest.Interest.IntTierMaxRate,TIER.I> NE '' THEN`.",
-            "Trong `AA.INTEREST.VALIDATE.b`, trường này tham gia điều kiện xử lý: `IF INT.RATE GT R.INTEREST.RECORD<AA.Interest.Interest.IntTierMaxRate,TIER.I> THEN`."
+            "Đặt mức trần cho rate của từng tier.",
+            "Trong validate, nếu rate tính ra vượt quá field này thì hệ thống chặn hoặc ép giới hạn theo mức trần đã khai báo.",
+            "Trong update, field này được nạp vào `MAX.TIER.CAP` và đi thẳng vào hàm tính nominal/effective rate cùng với min cap và negative-rate rule."
           ]
         },
         {
@@ -30131,55 +30105,45 @@
           "name": "AA.INT.EFFECTIVE.RATE",
           "slot": 27,
           "details": [
-            "Trường nằm ở vị trí `27` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: cấu trúc nhóm giá trị `XX-`, định dạng `013..C`, kiểu kiểm tra `R`, chỉ nhận các giá trị `-`.",
-            "Trong `AA.INTEREST.UPDATE.b`, trường này tham gia điều kiện xử lý: `IF R.INTEREST.RECORD<AA.Interest.Interest.IntCustomRate, CUR.TIER> EQ 'YES' AND R.INTEREST.RECORD<AA.Interest.Interest.IntEffectiveRate, CUR.TIER> EQ '' THEN`.",
-            "Trong `AA.INTEREST.UPDATE.b`, hệ thống gắn lỗi trực tiếp vào trường này; mã lỗi gần nhất là `AA.INT.CUSTOM.RATE.CAN.NOT.BE.NULL`.",
-            "Trong `AA.INTEREST.VALIDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `R.INTEREST.RECORD<AA.Interest.Interest.IntEffectiveRate,TIER.I> = NOMINAL.RATE`."
+            "Là mức lãi cuối cùng sau khi áp fixed/floating/periodic rate, usage percent, margin, min-max cap và quy tắc negative rate.",
+            "Trong `AA.INTEREST.VALIDATE.b`, hệ thống ghi trực tiếp `NOMINAL.RATE` vào field này sau khi hoàn tất mọi bước tính rate.",
+            "Nếu dùng custom rate mà field này để trống, `AA.INTEREST.UPDATE.b` báo lỗi vì downstream routines sẽ lấy chính field này để accrue và make due."
           ]
         },
         {
           "name": "AA.INT.TIER.AMOUNT",
           "slot": 28,
           "details": [
-            "Trường nằm ở vị trí `28` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: cấu trúc nhóm giá trị `XX-`, định dạng `19..C`, kiểu kiểm tra `AMT`.",
-            "Trong `AA.INTEREST.ACCOUNTING.METHOD.VALIDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `NO.OF.TIERS = COUNT(R.INTEREST.RECORD<AA.Interest.Interest.IntTierAmount>,@VM)+1 ;*Always do COUNT+1 since Tier amount can be NULL`.",
-            "Trong `AA.INTEREST.NEGATIVE.RATE.VALIDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `NO.TIERS = COUNT(R.INTEREST.RECORD<AA.Interest.Interest.IntTierAmount>,@VM) + 1`.",
-            "Trong `AA.INTEREST.PERIODIC.RESET.b`, routine đang đọc giá trị trường này từ record nhập mới vào biến `TIER.TOT`."
+            "Xác định mốc số tiền để chia các tier lãi theo amount.",
+            "Code dùng số lượng giá trị trong field này để tính tổng số tier cần xử lý; vì tier cuối có thể không có cận trên nên routine luôn `COUNT + 1`.",
+            "Khi bật `REFER.LIMIT`, validate chỉ cho phép đi theo mô hình tier amount, nên field này trở thành nền để map rate theo số dư hoặc hạn mức."
           ]
         },
         {
           "name": "AA.INT.TIER.PERCENT",
           "slot": 29,
           "details": [
-            "Trường nằm ở vị trí `29` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: cấu trúc nhóm giá trị `XX>`, định dạng `3..C`.",
-            "Trong `AA.INTEREST.ACCOUNTING.METHOD.VALIDATE.b`, trường này tham gia điều kiện xử lý: `IF SUM(R.INTEREST.RECORD<AA.Interest.Interest.IntTierPercent>) THEN ;* Tier Amount is not specified, so take the count of the tier percentage`.",
-            "Trong `AA.INTEREST.ACCOUNTING.METHOD.VALIDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `NO.OF.TIERS = DCOUNT(R.INTEREST.RECORD<AA.Interest.Interest.IntTierPercent>,@VM)`.",
-            "Trong `AA.INTEREST.VALIDATE.b`, trường này tham gia điều kiện xử lý: `IF SUM(R.INTEREST.RECORD<AA.Interest.Interest.IntTierPercent>) THEN`."
+            "Xác định tỷ trọng phần trăm của từng band khi property dùng tier theo tỷ lệ thay vì theo amount tuyệt đối.",
+            "Nếu field này có dữ liệu, validate đổi sang logic đếm tier theo `TIER.PERCENT` và kiểm tra tổng tỷ lệ của mô hình band.",
+            "Khi `REFER.LIMIT = YES`, code chặn kiểu khai báo này vì refer limit chỉ hỗ trợ tier theo amount."
           ]
         },
         {
           "name": "AA.INT.ON.ACTIVITY",
           "slot": 30,
           "details": [
-            "Trường nằm ở vị trí `30` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: cấu trúc nhóm giá trị `XX<`, định dạng `80`, kiểu kiểm tra `A`, đối chiếu dữ liệu với bảng `AA.ACTIVITY`.",
-            "Trong `AA.INTEREST.UPDATE.b`, routine đang đọc giá trị trường này từ record nhập mới vào biến `ON.ACTIVITY.LIST`.",
-            "Trong `AA.INTEREST.VALIDATE.b`, routine đang đọc giá trị trường này từ record nhập mới vào biến `ONACTIVITY.LIST`.",
-            "Trong `AA.INTEREST.VALIDATE.b`, hệ thống gắn lỗi trực tiếp vào trường này; mã lỗi gần nhất là `AA-NOT.A.VALID.ONACTIVITY`."
+            "Liệt kê những activity nào mới được phép kích hoạt việc tính lại rate hoặc amount của interest property.",
+            "Trong `AA.INTEREST.UPDATE.b`, routine đọc danh sách này rồi chỉ recalculate khi activity hiện tại nằm trong field.",
+            "Validate đối chiếu từng giá trị với bảng `AA.ACTIVITY`, nên field này là bộ lọc trực tiếp cho luồng update động của lãi."
           ]
         },
         {
           "name": "AA.INT.RECALCULATE",
           "slot": 31,
           "details": [
-            "Trường nằm ở vị trí `31` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: cấu trúc nhóm giá trị `XX>`, định dạng `35`, chỉ nhận các giá trị `NOTHING, RATE, PROFIT.AMOUNT.AND.RATE, PROFIT.AMOUNT`.",
-            "Trong `AA.INTEREST.ACCOUNTING.METHOD.VALIDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `ERROR.MSG<1> = AA.Interest.Interest.IntRecalculate`.",
-            "Trong `AA.INTEREST.ACCOUNTING.METHOD.VALIDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `ERROR.MSG<1> = AA.Interest.Interest.IntRecalculate`.",
-            "Trong `AA.INTEREST.INTEREST.METHOD.VALIDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `ERROR.MSG<1> = AA.Interest.Interest.IntRecalculate`."
+            "Cho biết khi activity đủ điều kiện thì hệ thống phải tính lại phần nào: không làm gì, chỉ rate, chỉ profit amount, hoặc cả hai.",
+            "Các routine validate dùng field này để chặn những tổ hợp không hợp lệ với `ACCOUNTING.MODE` và `INTEREST.METHOD`.",
+            "Field này quyết định phạm vi tính lại trong các luồng update, nên ảnh hưởng trực tiếp đến việc hệ thống chỉ sửa rate hay còn sửa cả số tiền lãi."
           ]
         },
         {
@@ -30196,40 +30160,36 @@
           "name": "AA.INT.REFER.LIMIT",
           "slot": 33,
           "details": [
-            "Trường nằm ở vị trí `33` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: định dạng `3..C`, chỉ nhận các giá trị `YES, NO`.",
-            "Trong `AA.INTEREST.LINKED.RATE.VALIDATE.b`, trường này tham gia điều kiện xử lý: `IF ReferLimit EQ \"YES\" THEN`.",
-            "Trong `AA.INTEREST.OVERRIDES.b`, trường này tham gia điều kiện xử lý: `IF R.INTEREST.RECORD<AA.Interest.Interest.IntReferLimit> EQ 'YES' THEN`.",
-            "Trong `AA.INTEREST.OVERRIDES.b`, có câu lệnh thao tác trực tiếp với trường này: `OVERRIDE.LIST<-1> = AA.Interest.Interest.IntReferLimit:'.':' ':'.':' ':AA.Framework.OveSep:'AA-LIMIT.DEFINITION.MISSING':@VM:AF.Framework.getPropertyId()`."
+            "Bật cơ chế lấy hạn mức làm cơ sở xác định tier/rate thay vì chỉ nhìn vào số dư của chính property.",
+            "Code chỉ cho dùng field này với product line `ACCOUNTS`; nếu bật mà không có cấu hình limit phù hợp, validate và overrides sẽ báo lỗi hoặc raise override.",
+            "Khi field này là `YES`, nhiều field tier khác bị ràng buộc chặt hơn, đặc biệt `TIER.AMOUNT` phải được dùng thay cho `TIER.PERCENT`."
           ]
         },
         {
           "name": "AA.INT.MIN.INT.AMOUNT",
           "slot": 34,
           "details": [
-            "Trường nằm ở vị trí `34` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: định dạng `19..C`, kiểu kiểm tra `AMT`, chỉ nhận các giá trị `-`.",
-            "Trong `AA.INTEREST.VALIDATE.b`, trường này tham gia điều kiện xử lý: `IF R.INTEREST.RECORD<EB.SystemTables.getAf()> AND NOT(R.INTEREST.RECORD<AA.Interest.Interest.IntMinIntAmount>) THEN`."
+            "Đặt ngưỡng số tiền lãi tối thiểu để quyết định có thu/ghi nhận lãi hay không.",
+            "Trong validate, nếu cấu hình yêu cầu cơ chế ngưỡng tối thiểu mà field này để trống thì record bị báo lỗi.",
+            "Các action make due và capitalise đọc field này để quyết định khoản lãi nhỏ có được chuyển thành due/capitalise hay bị xử lý theo nhánh waive."
           ]
         },
         {
           "name": "AA.INT.MIN.INT.WAIVE",
           "slot": 35,
           "details": [
-            "Trường nằm ở vị trí `35` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: định dạng `3..C`, chỉ nhận các giá trị `YES`.",
-            "Trong `AA.INTEREST.VALIDATE.b`, hệ thống gắn lỗi trực tiếp vào trường này; mã lỗi gần nhất là `AA.INT.INP.ALLOW.ONLY.IF.MIN.INT.AMT`."
+            "Cho phép bỏ qua khoản lãi nếu số lãi thực tế thấp hơn `MIN.INT.AMOUNT`.",
+            "Code chỉ cho nhập field này khi đã có `MIN.INT.AMOUNT`; nếu không, `AA.INTEREST.VALIDATE.b` gắn lỗi ngay trên field.",
+            "Vì vậy field này không tự đứng độc lập, mà chỉ là cờ xử lý đi kèm ngưỡng lãi tối thiểu."
           ]
         },
         {
           "name": "AA.INT.SUPPRESS.ACCRUAL",
           "slot": 36,
           "details": [
-            "Trường nằm ở vị trí `36` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: định dạng `10`, chỉ nhận các giá trị `YES, ALTERNATE, INFO.ONLY`.",
-            "Trong `AA.INTEREST.ACCRUE.PARTICIPANT.b`, routine đang đọc giá trị trường này từ record nhập mới vào biến `SUPRESS.FLAG`.",
-            "Trong `AA.INTEREST.ACCRUE.b`, routine đang đọc giá trị trường này từ record nhập mới vào biến `SUPRESS.FLAG`.",
-            "Trong `AA.INTEREST.CAPITALISE.b`, routine đang đọc giá trị trường này từ record nhập mới vào biến `SUPRESS.FLAG`."
+            "Điều khiển việc accrual có được ghi nhận thật hay chỉ tính thông tin.",
+            "Trong `AA.INTEREST.ACCRUE.b` và `AA.INTEREST.ACCRUE.PARTICIPANT.b`, field này được đọc vào `SUPRESS.FLAG` để rẽ nhánh: bỏ accrual, chỉ accrue luân phiên, hoặc chỉ tính mà không raise accounting entry.",
+            "`AA.INTEREST.CAPITALISE.b` cũng đọc field này để tránh capitalise phần lãi đang ở chế độ suppress không được ghi nhận thật."
           ]
         },
         {
@@ -30278,11 +30238,9 @@
           "name": "AA.INT.ACCOUNTING.MODE",
           "slot": 41,
           "details": [
-            "Trường nằm ở vị trí `41` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: định dạng `15`, chỉ nhận các giá trị `ADVANCE, UPFRONT.PROFIT`.",
-            "Trong `AA.INTEREST.ACCOUNTING.METHOD.VALIDATE.b`, trường này tham gia điều kiện xử lý: `CASE R.INTEREST.RECORD<AA.Interest.Interest.IntAccountingMode> EQ \"ADVANCE\"`.",
-            "Trong `AA.INTEREST.ACCOUNTING.METHOD.VALIDATE.b`, trường này tham gia điều kiện xử lý: `CASE PRODUCT.LINE EQ \"DEPOSITS\" AND R.INTEREST.RECORD<AA.Interest.Interest.IntAccountingMode> EQ \"UPFRONT.PROFIT\"`.",
-            "Trong `AA.INTEREST.ACCOUNTING.METHOD.VALIDATE.b`, trường này tham gia điều kiện xử lý: `CASE PRODUCT.LINE EQ \"ACCOUNTS\" AND R.INTEREST.RECORD<AA.Interest.Interest.IntAccountingMode> EQ \"UPFRONT.PROFIT\"`."
+            "Xác định cách hạch toán lãi: thu trước kiểu `ADVANCE` hay ghi nhận lợi nhuận trả trước kiểu `UPFRONT.PROFIT`.",
+            "Các validate của interest method và accounting method dùng field này để chặn những tổ hợp sai theo từng product line.",
+            "Những action xử lý như accrue, adjust, credit, chargeoff đều đọc field này để chọn nhánh accounting và cách đảo/đẩy số dư liên quan đến interest."
           ]
         },
         {
@@ -30340,22 +30298,18 @@
           "name": "AA.INT.INTEREST.METHOD",
           "slot": 47,
           "details": [
-            "Trường nằm ở vị trí `47` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: định dạng `6`, chỉ nhận các giá trị `FIXED`.",
-            "Trong `AA.INTEREST.ACCOUNTING.METHOD.VALIDATE.b`, trường này tham gia điều kiện xử lý: `IF R.INTEREST.RECORD<AA.Interest.Interest.IntInterestMethod> EQ \"FIXED\" THEN`.",
-            "Trong `AA.INTEREST.ACCOUNTING.METHOD.VALIDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `ERROR.MSG<4> = \"AA.INT.INTEREST.METHOD.NOT.ALLOWED\"`.",
-            "Trong `AA.INTEREST.ACCOUNTING.METHOD.VALIDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `ERROR.MSG<1> = AA.Interest.Interest.IntInterestMethod`."
+            "Chỉ ra cơ chế tính lãi nghiệp vụ; trong source hiện tại field này chủ yếu hỗ trợ giá trị `FIXED` cho các luồng được phép.",
+            "Các validate kiểm tra field này cùng với `ACCOUNTING.MODE`, `RATE.TYPE` và hệ thống cài đặt để chặn cấu hình fixed-method ở nơi không hỗ trợ.",
+            "Các routine adjust và determine-interest-method cũng đọc field này để chọn công thức xử lý khi payoff, restructure hoặc hạch toán upfront profit."
           ]
         },
         {
           "name": "AA.INT.RATE.TYPE",
           "slot": 48,
           "details": [
-            "Trường nằm ở vị trí `48` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: định dạng `15`, chỉ nhận các giá trị `REDUCING.RATE, FLAT.RATE, FLAT.AMOUNT`.",
-            "Trong `AA.INTEREST.ACCOUNTING.METHOD.VALIDATE.b`, trường này tham gia điều kiện xử lý: `IF R.INTEREST.RECORD<AA.Interest.Interest.IntRateType> NE \"REDUCING.RATE\" THEN`.",
-            "Trong `AA.INTEREST.ACCOUNTING.METHOD.VALIDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `ERROR.MSG<1> = AA.Interest.Interest.IntRateType`.",
-            "Trong `AA.INTEREST.ACCOUNTING.METHOD.VALIDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `ERROR.MSG<4> = \"AA.INT.RATE.TYPE.SET.ONLY.FOR.FIXED\"`."
+            "Xác định bản chất rate của interest fixed: giảm dần, flat theo tỷ lệ, hay flat theo số tiền.",
+            "Field này chỉ được phép dùng trong các cấu hình `INTEREST.METHOD = FIXED`; code báo lỗi nếu nhập rate type ở ngoài phạm vi đó.",
+            "Validate còn dùng field này để chặn negative-rate hoặc product-line không tương thích, đặc biệt với lending và facility."
           ]
         },
         {
@@ -31141,11 +31095,9 @@
           "name": "AA.INT.USAGE.PERCENT",
           "slot": 132,
           "details": [
-            "Trường nằm ở vị trí `132` trong record của property class.",
-            "Khai báo trong routine `FIELDS`: cấu trúc nhóm giá trị `XX-`, định dạng `6..C`, kiểu kiểm tra `R`.",
-            "Trong `AA.INTEREST.UPDATE.b`, routine đang đọc giá trị trường này từ record nhập mới vào biến `USAGE.PERCENT`.",
-            "Trong `AA.INTEREST.UPDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `CURRENT.INT.RATE<2> = USAGE.PERCENT ;*Pass usage percentage to apply it on reference rate`.",
-            "Trong `AA.INTEREST.VALIDATE.b`, có câu lệnh thao tác trực tiếp với trường này: `USAGE.PERCENT = R.INTEREST.RECORD<AA.Interest.Interest.IntUsagePercent,TIER.I>`."
+            "Là tỷ lệ phần trăm dùng để nhân vào rate gốc trước khi cộng margin, ví dụ chỉ áp 80 phần trăm của reference rate.",
+            "Trong `AA.INTEREST.VALIDATE.b`, code kiểm tra field này không vượt quá 3 chữ số phần nguyên và không quá 2 số lẻ, sau đó tính `INT.RATE = INT.RATE * USAGE.PERCENTAGE / 100`.",
+            "Trong `AA.INTEREST.UPDATE.b`, field này được nhét vào `CURRENT.INT.RATE<2>` để hàm tính nominal/effective rate dùng lại đúng tỷ lệ sử dụng đã cấu hình."
           ]
         },
         {
