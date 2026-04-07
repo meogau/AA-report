@@ -1724,3 +1724,119 @@ Nguyên tắc:
   - update `AA.ACCOUNT.DETAILS` cho maturity/cancel/expiry.
   - nếu tranche = yes thì update tranche activity.
   - nếu `COMMITMENT.SCHEDULE` hoặc `UNAVAILABILITY.SCHEDULE` có mặt thì gọi manager tương ứng.
+
+### Batch tiếp theo đã đọc lại và đưa sang web override
+
+#### ACTIVITY.PRESENTATION
+- Source đã đọc:
+  - `T24.BP/AA.ACTIVITY.PRESENTATION.FIELDS.b`
+  - `T24.BP/AA.ACTIVITY.PRESENTATION.VALIDATE.b`
+  - `T24.BP/AA.ACTIVITY.PRESENTATION.UPDATE.b`
+- Chốt từ `FIELDS` và `VALIDATE`:
+  - `PROPERTY.CLASS` / `CLASS.VERSION` là cặp scope theo class-version.
+  - `PROPERTY` / `PROP.VERSION` là cặp scope theo property-version.
+  - `ACTIVITY.ID` / `ACT.PROPERTY` / `ACT.VERSION` là cặp scope theo activity.
+  - `SUPPRESS.SEE.MODE`, `HIDE.ACTIVITY`, `HIDE.PROPERTY` là nhóm điều khiển ẩn hiển thị.
+  - validate chặn trùng lặp cho class/property/activity/hide lists và buộc phải có ít nhất một trong các scope class/property/activity.
+- Chốt từ `UPDATE`:
+  - `UNAUTH`, `DELETE`, `REVERSE` chỉ gọi `AA.Framework.UpdateChangeCondition()`.
+  - `AUTH` không có write business trực tiếp.
+
+#### ACTIVITY.RESTRICTION
+- Source đã đọc:
+  - `T24.BP/AA.ACTIVITY.RESTRICTION.FIELDS.b`
+  - `T24.BP/AA.ACTIVITY.RESTRICTION.UPDATE.b`
+  - `T24.BP/AA.ACTIVITY.RESTRICTION.MAINTAIN.b`
+  - `T24.BP/AA.ACTIVITY.RESTRICTION.EVALUATE.b`
+  - `T24.BP/AA.ACTIVITY.RESTRICTION.ALTERNATE.b`
+  - `T24.BP/AA.ACTIVITY.RESTRICTION.EVALUATE.GUARD.b`
+  - `T24.BP/AA.ACTIVITY.RESTRICTION.PROP.EVALUATE.b`
+  - `T24.BP/AA.ACTIVITY.RESTRICTION.OVERRIDES.b`
+- Chốt từ `FIELDS`:
+  - `RULE.NAME`, `RULE.SET`, `RULE.EXPRESSION`, `RULE.EVALUATION`, `DEFAULT.RESULT`, `RESULT.ACTION` là lõi expression/rule result.
+  - `RULE.ACTIVITY.CLASS`, `RULE.ACTIVITY.ID` là trigger của rule.
+  - `ACTIVITY.CLASS`, `ACTIVITY.ID`, `RESTRICT.TYPE`, `RESTRICT.ERROR` là outcome ở lớp action restriction.
+- Chốt từ `UPDATE`:
+  - `UNAUTH`, `DELETE`, `REVERSE` đều gọi `AA.ActivityRestriction.ActivityRestrictionMaintain()` rồi `AA.Framework.UpdateChangeCondition()`.
+- Chốt từ `MAINTAIN`:
+  - đọc property `ACCOUNT` để lấy date-convention/date-adjustment/business-days.
+  - tính `NEXT.CYCLED.DATE` bằng `AA.Rules.GetRecalcDate(...)`.
+  - ghi lịch review bằng `AA.Framework.SetScheduledActivity(...)` lên `AA.SCHEDULED.ACTIVITY`.
+- Chốt từ `EVALUATE`:
+  - `UNAUTH` gọi `AA.ActivityRestriction.EvaluateActivityRestriction(...)`.
+  - `DELETE`/`REVERSE` xóa deferred charge details qua `AA.ActivityCharges.ProcessChargeDetails(..., 'DELETE', 'ACTIVITY', ...)`.
+  - `AUTH` gọi `AA.ActivityRestriction.TriggerActionActivity(...)`.
+- Chốt từ `ALTERNATE`:
+  - với cặp property cùng class `INTEREST`, gọi `AA.Interest.UpdateInterestAccruals(..., UPD.MODE='ALTERNATE', ...)`.
+  - dựng secondary maintain activity để set `SUPPRESS.ACCRUAL = ALTERNATE`.
+- Chốt từ `EVALUATE.GUARD`:
+  - quyết định có chạy evaluate hay không dựa trên setup activity class/id hiện tại.
+
+#### ALERTS
+- Source đã đọc:
+  - `T24.BP/AA.ALERTS.FIELDS.b`
+  - `T24.BP/AA.ALERTS.EVALUATE.b`
+  - `T24.BP/AA.ALERTS.SUBSCRIBE.b`
+  - `T24.BP/AA.ALERTS.RECORD.b`
+- Chốt từ `FIELDS`:
+  - `EVENT`, `FIELD`, `OPERAND`, `VALUE`, `ROLE` là bộ tiêu chí alert.
+  - `SUBSCRIBED`, `REQUEST.ID` là trạng thái/request của subscription.
+- Chốt từ `EVALUATE`:
+  - `AUTH` bỏ qua reversal master, simulation và arrangement status `CLOSE`.
+  - lấy activity class bằng `AA.ProductFramework.GetActivityClass(...)`.
+  - đếm `AccAlertEventType`.
+  - dựng image/link data rồi gọi TEC record event để raise alert.
+- Chốt từ `SUBSCRIBE`:
+  - mới thấy shell action theo status, chưa thấy business update cụ thể.
+- Chốt từ `RECORD`:
+  - đặt `SUBSCRIBED`, `REQUEST.ID`, `VALUE` thành `NOINPUT`.
+
+#### AZ.ACCOUNTING
+- Source đã đọc:
+  - `T24.BP/AA.AZ.ACCOUNTING.FIELDS.b`
+  - `T24.BP/AA.AZ.ACCOUNTING.RECORD.b`
+- Chốt từ `FIELDS`:
+  - property này là lớp map transaction code classic cho debit/credit/interest/charge/loan/deposit/maturity/correction.
+  - `MAX.BACK.DATE`, `ACCT.SYNC`, `INT.CORR.IMMED`, `INT.CORR.RTN` là nhóm control vận hành.
+- Chốt từ `RECORD`:
+  - ở product context chỉ khóa `ACCT.SYNC` bằng `AA.ClassicProducts.SetClassicNochange(...)`.
+
+#### AZ.CR.CARD
+- Source đã đọc:
+  - `T24.BP/AA.AZ.CR.CARD.FIELDS.b`
+  - `T24.BP/AA.AZ.CR.CARD.RECORD.b`
+- Chốt từ `FIELDS`:
+  - field chính là `CARD.TYPE`, `APPROPRIATE.TYPE`, `REVOLVING.RATIO`, `HIGHEST.RANGE`, `AMT.PERCENT`, `CC.PR.GRACE.PERIOD`, `CREATE.PD.EOD`, `PD.LINK.MAIN.AZ`.
+- Chốt từ `RECORD`:
+  - ở product context khóa `MULTI` và `PD.LINK.MAIN.AZ`.
+
+#### AZ.DEPOSIT
+- Source đã đọc:
+  - `T24.BP/AA.AZ.DEPOSIT.FIELDS.b`
+  - `T24.BP/AA.AZ.DEPOSIT.RECORD.b`
+- Chốt từ `FIELDS`:
+  - field chính là `PART.REDEMPTION`, `ROLL.MAT.WRK.DAY`, `CREATE.TD.FOR.INT`, `MATURITY.INSTR`, `REPAYMENT.TYPE`, `SINGLE.LIMIT`, `PRE.CLOSURE.FEE`, `RESCHED.TYPE`.
+- Chốt từ `RECORD`:
+  - ở product context khóa `MULTI`, `CREATE.TD.FOR.INT`, `SINGLE.LIMIT`, `REPAYMENT.TYPE`.
+
+#### AZ.LOAN
+- Source đã đọc:
+  - `T24.BP/AA.AZ.LOAN.FIELDS.b`
+  - `T24.BP/AA.AZ.LOAN.RECORD.b`
+  - `T24.BP/AA.AZ.LOAN.VALIDATE.b`
+- Chốt từ `FIELDS`:
+  - field chính là `DRAWDOWN.TYPE`, `PD.LINK.TO.AZ`, `IRA.PROCESS`, `INT.ONLY`, `MAX.INSTL.INT.ONLY`, `REPAYMENT.TYPE`, `SINGLE.LIMIT`, `TERM.PRIORITY`, `PRE.CLOSURE.FEE`.
+- Chốt từ `RECORD`:
+  - ở product context khóa `PD.LINK.TO.AZ`, `IRA.PROCESS`, `SINGLE.LIMIT`, `REPAYMENT.TYPE`.
+- Chốt từ `VALIDATE`:
+  - nếu `INT.ONLY = Y` thì `MAX.INSTL.INT.ONLY` là bắt buộc.
+  - giá trị `MAX.INSTL.INT.ONLY` phải là số hoặc dạng `P` + số.
+
+#### AZ.SAVINGS
+- Source đã đọc:
+  - `T24.BP/AA.AZ.SAVINGS.FIELDS.b`
+- Chốt từ `FIELDS`:
+  - `CREDIT.AMT.MULTI`, `BONUS.PREMIUM`, `LATE.PYMT.FEE`, `LIAB.TO.PENALTY`, `PENALTY.COLL.AT`, `BONUS.ON`, `BONUS.ON.ARREARS` là bộ field nghiệp vụ chính.
+  - các field `RESERVED1..5` đã bị đặt `NOINPUT`.
+- Chốt từ action:
+  - hiện chưa thấy `RECORD`, `VALIDATE` hay action routine riêng trong source batch này.

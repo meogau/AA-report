@@ -3,6 +3,7 @@ import { manualCoreOverrides } from "@/lib/manual-core-overrides";
 import { manualFifthOverrides } from "@/lib/manual-fifth-overrides";
 import { manualNextOverrides } from "@/lib/manual-next-overrides";
 import { manualFourthOverrides } from "@/lib/manual-fourth-overrides";
+import { manualSeventhOverrides } from "@/lib/manual-seventh-overrides";
 import { manualSixthOverrides } from "@/lib/manual-sixth-overrides";
 import { manualThirdOverrides } from "@/lib/manual-third-overrides";
 
@@ -43,7 +44,8 @@ const manualOverrides = {
   ...manualThirdOverrides,
   ...manualFourthOverrides,
   ...manualFifthOverrides,
-  ...manualSixthOverrides
+  ...manualSixthOverrides,
+  ...manualSeventhOverrides
 };
 const items = payload.items.map((item) => manualOverrides[item.slug] ?? item);
 const summary = {
