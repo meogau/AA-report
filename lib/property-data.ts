@@ -1,6 +1,7 @@
 import propertyData from "@/data/property-data.json";
 import { manualCoreOverrides } from "@/lib/manual-core-overrides";
 import { manualNextOverrides } from "@/lib/manual-next-overrides";
+import { manualFourthOverrides } from "@/lib/manual-fourth-overrides";
 import { manualThirdOverrides } from "@/lib/manual-third-overrides";
 
 export type PropertyField = {
@@ -37,7 +38,8 @@ const payload = propertyData as PropertyPayload;
 const manualOverrides = {
   ...manualCoreOverrides,
   ...manualNextOverrides,
-  ...manualThirdOverrides
+  ...manualThirdOverrides,
+  ...manualFourthOverrides
 };
 const items = payload.items.map((item) => manualOverrides[item.slug] ?? item);
 const summary = {

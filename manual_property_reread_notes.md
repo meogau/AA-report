@@ -1207,3 +1207,249 @@ Nguyên tắc:
   - đọc old/new source-target property bằng `AA.PricingGrid.GetSourceAndTargetProperty(...)`.
   - nếu mapping đổi, gọi `AA.PricingGrid.UpdateArrangementGridLink(...)` để remove/add arrangement links.
   - nếu level = 1 thì gọi `AA.PricingGrid.UpdateCustomerGridLink(...)` để add/delete customer links.
+
+### Batch tiếp theo
+
+#### Source vừa xác nhận
+- `T24.BP/AA.BUNDLE.HIERARCHY.FIELDS.b`
+- `T24.BP/AA.BUNDLE.HIERARCHY.UPDATE.b`
+- `T24.BP/AA.BUNDLE.HIERARCHY.HANDOFF.b`
+- `T24.BP/AA.BUNDLE.HIERARCHY.HANDOFF.DETAILS.b`
+- `T24.BP/AA.BUNDLE.HIERARCHY.DATA.CAPTURE.b`
+- `T24.BP/AA.BUNDLE.HIERARCHY.FUNCTION.b`
+- `T24.BP/AA.INTEREST.COMPENSATION.FIELDS.b`
+- `T24.BP/AA.INTEREST.COMPENSATION.UPDATE.b`
+- `T24.BP/AA.INTEREST.COMPENSATION.CLOSE.b`
+- `T24.BP/AA.PARTICIPANT.FIELDS.b`
+- `T24.BP/AA.PARTICIPANT.UPDATE.b`
+- `T24.BP/AA.PARTICIPANT.ALLOCATE.PAYMENT.b`
+- `T24.BP/AA.FACILITY.FIELDS.b`
+- `T24.BP/AA.FACILITY.UPDATE.b`
+- `T24.BP/AA.FACILITY.EVALUATE.b`
+- `T24.BP/AA.FACILITY.CHECK.PRODUCT.b`
+- `T24.BP/AA.SUB.ARRANGEMENT.CONDITION.FIELDS.b`
+- `T24.BP/AA.SUB.ARRANGEMENT.CONDITION.UPDATE.b`
+- `T24.BP/AA.SUB.ARRANGEMENT.RULES.FIELDS.b`
+- `T24.BP/AA.SUB.ARRANGEMENT.RULES.UPDATE.b`
+- `T24.BP/AA.SUB.LIMITS.FIELDS.b`
+- `T24.BP/AA.SUB.LIMITS.UPDATE.b`
+- `T24.BP/AA.TERM.AMOUNT.FIELDS.b`
+- `T24.BP/AA.TERM.AMOUNT.UPDATE.b`
+- `T24.BP/AA.TERM.AMOUNT.DRAW.b`
+- `T24.BP/AA.TERM.AMOUNT.REDEEM.b`
+
+### BUNDLE.HIERARCHY
+
+#### Field đã chốt
+- `ALLOWED.PRODUCT.GROUP`, `ALLOWED.PRODUCT`, `ALLOWED.PARENT`
+  - rule lọc product con và parent trong bundle/pool.
+- `ACCOUNT.REF`, `ACCOUNT.ALIAS`, `CUSTOMER`, `ACC.COMPANY`, `ACC.CURRENCY`, `ACC.PRODUCT`
+  - bộ dữ liệu account draft/CT account sẽ được đẩy sang `AA.POOL.ORCHESTRATION.DETAILS`.
+- `NEW.BUNDLE.REF`, `PARENT.ACCOUNT`
+  - dữ liệu move/change pool.
+- `LINK.TYPE`
+  - loại thao tác pool: `LINK`, `DELINK`, `CLOSE`, `CHANGE.PARENT`, `UPDATE`, `SET.LIVE.DATE`, `CHANGE.POOL`.
+- `KEEP.BALANCE`
+  - giữ balance trong pool hay không.
+- `LIVE.DATE`
+  - ngày live của account trong bundle/pool.
+- `ACC.LOCATION`
+  - location của draft account cho orchestration.
+
+#### Action đã chốt
+- `UPDATE`
+  - input/delete/reverse chỉ `AA.Framework.UpdateChangeCondition()`.
+  - auth path đọc `R.NEW`, lấy `ACCOUNT.REF`, `LIVE.DATE`.
+  - nếu live date trống thì đọc `AA.BundleHierarchy.PoolOrchestrationDetails` hiện tại hoặc bundle cũ trong cross-pool để lấy `PodLiveDate`.
+  - chọn `PROCESS.TYPE` giữa `AUTH`, `PRELIMINARY.AUTH`, `PRELIMINARY.UPDATE`, `MOVE.TO.LIVE`.
+  - gọi `AA.BundleHierarchy.ProcessBundleHierarchyDetails(...)`.
+- `HANDOFF`
+  - auth path gọi `AA.BundleHierarchy.BundleHierarchyHandoffDetails(...)`.
+  - nếu routine trả warning thì store override.
+  - unauth + `RESTRUCTURE` chỉ validate CT accounts; lỗi sẽ được split ra và raise trên field `BhAccountRef`.
+- `HANDOFF.DETAILS`
+  - build record `AA.POOL.ORCHESTRATION.DETAILS` từ field `ACCOUNT.REF` tới `LIVE.DATE`.
+  - `DRAFT`: write table.
+  - `RESTRUCTURE`/`SWITCH.TO.PRELIMINARY`: check CT account, build record, write table, write service list.
+  - `INTEGRITY.CHECK`: write record/list riêng với status `Processing...`.
+- `DATA.CAPTURE`
+  - auth path gọi `BundleHierarchyHandoffDetails(..., "DRAFT", ...)`.
+  - auth-rev path gọi `PoolOrchestrationDetailsDelete(...)`.
+- `FUNCTION`
+  - chặn function `R` cho `UPDATE-BUNDLE.HIERARCHY` khi request là browser request.
+
+### INTEREST.COMPENSATION
+
+#### Field đã chốt
+- `RECIPIENT.PRODUCT`, `RECIPIENT.PROPERTY`
+  - phía recipient được hưởng bù lãi.
+- `OFFSET.TYPE`
+  - offset theo `POOL` hoặc `RECIPIENT`.
+- `MAX.OFFSET`
+  - giới hạn offset tối đa.
+- `DONOR.PRODUCT`, `DONOR.PROPERTY`
+  - phía donor của compensation.
+- `DONOR.ACCRUAL`
+  - `CALCULATE`, `SUPPRESS`, `INFO.ONLY`.
+- `DONOR.BALANCE.TYPE`
+  - balance type donor.
+- `DONATE.TYPE`
+  - source calc type được donate.
+
+#### Action đã chốt
+- `UPDATE`
+  - đọc current/old `INTEREST.COMPENSATION` và current/old `PRODUCT.BUNDLE`.
+  - gọi `AA.InterestCompensation.ProductBundleCheckLinks(...)` để biết online/offline processing.
+  - dùng current/old bundle để update donor/recipient link details trên `AA.ARRANGEMENT`.
+  - auth/auth-rev theo comment sẽ trigger `MAINTAIN-INTEREST` qua common `UpdateInterestCompensation(...)`.
+- `CLOSE`
+  - khi close bundle ở `AUTH` hoặc `AUTH-REV`, gọi `AA.InterestCompensation.UpdateInterestCompensation(...)`.
+  - `AUTH` sẽ set `REV.FLAG = 1` vì close được xử lý như reversal của bundle arrangement.
+
+### PARTICIPANT
+
+#### Field đã chốt
+- `BANK.ROLE`
+  - `AGENT`, `AGENT CUM PARTICIPANT`, `PARTICIPANT`.
+- `OWN.COMMIT.AMT`, `OWN.COMMIT.PERC`
+  - phần commitment của own bank.
+- `PARTICIPANT`, `COMMITMENT.AMT`, `COMMITMENT.PERC`
+  - danh sách participant cùng amount/percent của từng participant.
+- `PARTICIPANT.ROLE`
+  - role customer ở participant side.
+- `BENEFICIARY.*`
+  - dữ liệu payout/beneficiary cho participant.
+- `SKIM.PROPERTY`, `MARGIN.OPER`, `MARGIN.RATE`
+  - dữ liệu skim/margin participant.
+
+#### Action đã chốt
+- `UPDATE`
+  - đọc balance treatment từ `AA.Account.GetAccountBalanceTreatment(...)`.
+  - đọc `TERM.AMOUNT` để lấy `CurrentAmount`.
+  - nếu account treatment là participation và activity là `INCREASE`, `DECREASE` hoặc new arrangement:
+    - với increase/decrease, lấy amount cũ rồi tính lại pro-rata theo `CHANGE.AMOUNT`
+    - validate participant
+    - tính `OwnCommitAmt` và `OwnCommitPerc`
+    - ghi lại các field amount/percent vào `R.NEW`
+    - refresh participant common bằng `AA.Participant.SetParticipantCommon(...)`
+- `ALLOCATE.PAYMENT`
+  - lấy participant list từ `AA.Participant.GetParticipantsCommon(...)`.
+  - lấy borrower current repayment từ `AA.ACTIVITY.BALANCES` cho `ACCOUNT` và `INTEREST`.
+  - lấy borrower bill repayment từ `AA.BILL.DETAILS`.
+  - chia repayment lại cho own bank và participants.
+  - update `AA.ACTIVITY.BALANCES` cho participant side.
+
+### FACILITY
+
+#### Field đã chốt
+- `SERVICE`
+  - service group bật cho facility.
+- `SERVICE.AVAILABILITY`
+  - `AVAILABLE`, `BLOCKED`, `OPTIONAL`.
+- `CUSTOMER.OPTION`
+  - `OPT-IN`, `OPT-OUT`.
+
+#### Action đã chốt
+- `UPDATE`
+  - wrapper `AA.Framework.UpdateChangeCondition()`.
+- `EVALUATE`
+  - đọc `TRANSACTION.SERVICE.GROUP` từ activity context.
+  - gọi `AA.Facility.DetermineAllowedService(...)`.
+  - nếu `AllowedLevel = ERROR` thì raise end error.
+- `CHECK.PRODUCT`
+  - locate `FL` trong company applications để biết company có bật Facility product line hay không.
+
+### SUB.ARRANGEMENT.CONDITION
+
+#### Field đã chốt
+- `PRODUCT.LINE`, `PRODUCT.GROUP`, `PRODUCT`, `CURRENCY`
+  - bộ điều kiện match sub-arrangement.
+- `PROPERTY`
+  - property áp condition.
+- `ATTRIBUTE`, `VALUE`, `MESSAGE`
+  - rule attribute và cách phản hồi `ERROR`/`OVERRIDE`.
+- `PROPERTY.CLASS`, `SYS.ATTRIBUTE`, `TYPE`, `LINK`
+  - field hệ thống được default tự động.
+
+#### Action đã chốt
+- `UPDATE`
+  - unauth path gọi `AA.SubArrangementCondition.DetermineSubArrangementConditionLink(...)`.
+  - ghi ngược `SYS.ATTRIBUTE`, `PROPERTY.CLASS`, `TYPE`, `LINK` vào `R.NEW`.
+
+### SUB.ARRANGEMENT.RULES
+
+#### Field đã chốt
+- `CUSTOMER`, `REQUIRED.CUSTOMER`, `ALLOWED.CUSTOMER`
+  - rule customer cho sub-arrangement.
+- `CURRENCY`, `ALLOWED.CURRENCY`
+  - rule currency.
+- `PRODUCT`, `ALLOWED.PRD.GROUP`, `ALLOWED.PRODUCT`
+  - rule product.
+- `TERM.RECALCULATION`
+  - cho phép recalc term.
+- `CURRENCY.MARKET`, `EXCH.RATE.TYPE`
+  - rule FX cho sub-arrangement đa tiền tệ.
+
+#### Action đã chốt
+- `UPDATE`
+  - wrapper `AA.Framework.UpdateChangeCondition()`.
+
+### SUB.LIMITS
+
+#### Field đã chốt
+- `RISK.CRITERION`
+  - data element làm tiêu chí sub-limit.
+- `CRITERION.1..10`
+  - giá trị criterion.
+- `SUB.LIMITS.CCY`
+  - currency sub-limit, hiện là `FACILITY.CCY`.
+- `SUB.LIMITS.AMOUNT`
+  - amount sub-limit.
+
+#### Action đã chốt
+- `UPDATE`
+  - `UNAUTH`/`DELETE`: nếu không phải new arrangement thì gọi `AA.SubLimits.RestrictionLimitsHandOff()`.
+  - `AUTH`: nếu new arrangement hoặc `AUTH-REV` thì handoff restriction limits.
+  - mọi nhánh đều update change condition.
+
+### TERM.AMOUNT
+
+#### Field đã chốt
+- `AMOUNT`
+  - commitment/principal amount hiện tại.
+- `CHANGE.AMOUNT`
+  - amount tăng/giảm trong activity.
+- `TERM`
+  - kỳ hạn.
+- `REVOLVING`
+  - `NO`, `PAYMENT`, `PREPAYMENT`.
+- `UPDATE.COMMT.LIMIT`
+  - có update facility commitment hay không.
+- `MATURITY.DATE`
+  - ngày đáo hạn.
+- `EXPIRY.DATE`
+  - ngày hết hiệu lực commitment.
+- `COMMITMENT.DRAWDOWN`
+  - `AUTO`, `SCHEDULE`, `MANUAL`.
+- `ON.MATURITY`
+  - xử lý khi maturity, ví dụ `DUE`.
+- `UPDATE.UTILISATION`
+  - có raise/update utilisation hay không.
+- `UPDATE.COMMIT.ON.CAP`
+  - cách cập nhật commitment khi repay/capitalise overdraw.
+- `CANCEL.PERIOD`
+  - kỳ tính cancel date.
+
+#### Action đã chốt
+- `DRAW`
+  - lấy movement amount từ `AmtAmount`, xác định balance type bằng `PropertyGetBalanceName(...)`.
+  - validate available commitment / limit / utilisation theo cờ update.
+  - build accounting event rồi gọi `AA.Accounting.AccountingManager(...)`.
+  - handoff update limit/facility commitment sang common term amount APIs.
+- `REDEEM`
+  - đọc `AmtAmount`, lấy balance type `TOT`, build event `DEBIT`, gọi accounting manager.
+- `UPDATE`
+  - update `AA.SCHEDULED.ACTIVITY`.
+  - update `AA.ACCOUNT.DETAILS` cho maturity/cancel/expiry.
+  - nếu tranche = yes thì update tranche activity.
+  - nếu `COMMITMENT.SCHEDULE` hoặc `UNAVAILABILITY.SCHEDULE` có mặt thì gọi manager tương ứng.
