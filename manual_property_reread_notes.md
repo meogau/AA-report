@@ -925,3 +925,285 @@ Nguyên tắc:
   - helper/common routine cho calculate
 - `UPDATE`
   - wrapper update condition của activity charges
+
+### Batch tiếp theo đang đưa lên web
+
+#### Source vừa xác nhận
+- `T24.BP/AA.CHARGEOFF.FIELDS.b`
+- `T24.BP/AA.CHARGEOFF.UPDATE.b`
+- `T24.BP/AA.CHARGEOFF.EVALUATE.b`
+- `T24.BP/AA.CHARGEOFF.ALLOCATE.PAYMENT.b`
+- `T24.BP/AA.CHARGEOFF.FULL.AMOUNT.ALLOCATE.b`
+- `T24.BP/AA.CHANGE.PRODUCT.FIELDS.b`
+- `T24.BP/AA.CHANGE.PRODUCT.UPDATE.b`
+- `T24.BP/AA.CHANGE.PRODUCT.REMOVE.b`
+- `T24.BP/AA.LIMIT.FIELDS.b`
+- `T24.BP/AA.LIMIT.UPDATE.b`
+- `T24.BP/AA.LIMIT.CHANGE.b`
+- `T24.BP/AA.PAYMENT.PRIORITY.FIELDS.b`
+- `T24.BP/AA.PAYMENT.PRIORITY.UPDATE.b`
+- `T24.BP/AA.PAYMENT.PRIORITY.ALLOCATE.b`
+- `T24.BP/AA.PRODUCT.BUNDLE.FIELDS.b`
+- `T24.BP/AA.PRODUCT.BUNDLE.UPDATE.b`
+- `T24.BP/AA.PRODUCT.BUNDLE.CHECK.LINKS.b`
+- `T24.BP/AA.PRODUCT.BUNDLE.CLOSE.b`
+- `T24.BP/AA.PRODUCT.BUNDLE.UPDATE.LIVE.DATE.b`
+- `T24.BP/AA.PROPERTY.CONTROL.FIELDS.b`
+- `T24.BP/AA.PROPERTY.CONTROL.UPDATE.b`
+- `T24.BP/AA.PRICING.RULES.FIELDS.b`
+- `T24.BP/AA.PRICING.RULES.UPDATE.b`
+- `T24.BP/AA.PRICING.RULES.REMOVE.b`
+- `T24.BP/AA.PRICING.GRID.FIELDS.b`
+- `T24.BP/AA.PRICING.GRID.UPDATE.b`
+
+### CHARGEOFF
+
+#### Field đã chốt
+- `FINANCIAL.STATUS`
+  - chọn bộ charge-off order theo trạng thái `PERFORMING`, `SUSPENDED`, `BOTH`.
+  - `AA.CHARGEOFF.EVALUATE.b` ưu tiên locate `BOTH`; nếu không có thì gọi `AA.Framework.GetSuspendDetails(...)` để tự suy ra trạng thái đang dùng.
+- `CHARGE.OFF.ORDER`
+  - quy định thứ tự charge-off tăng/giảm theo `OLDEST.FIRST` hoặc `NEWEST.FIRST`.
+  - field này được copy vào `CHARGEOFF.ORDER` trước khi đi xuống các routine allocate chi tiết.
+- `WRITEOFF.ORDER`
+  - thứ tự write-off bank-first hay bank-last.
+  - mới thấy chắc ở lớp field definition.
+- `APPLICATION.TYPE`
+  - loại allocation rule, lookup từ `AA.PAYMENT.RULE.TYPE`.
+  - validate có đọc field này để kiểm tra cấu hình allocate.
+- `APPLICATION.ORDER`
+  - thứ tự áp allocation rule.
+- `BALANCE.PROPERTY`
+  - list property bị charge-off; source allocate đếm, cắt và lặp field này để cập nhật property amounts trong bill/details.
+- `BALANCE.TYPE`
+  - loại bucket gắn với từng property: `BILLED`, `CURRENT`, `CHARGEOFF`.
+
+#### Action đã chốt
+- `UPDATE`
+  - wrapper change-condition; các nhánh `UNAUTH`, `DELETE`, `REVERSE` chỉ gọi `AA.Framework.UpdateChangeCondition()`.
+- `EVALUATE`
+  - đọc `ArrActTxnAmount` từ AAA.
+  - xác định chargeoff order theo financial status.
+  - nhánh `UPDATE`/`REVERSE` đều đi qua `CHARGEOFF.PROCESSING`.
+  - logic con đi xuống `AA.CHARGEOFF.ALLOCATE.PAYMENT.b` và `AA.CHARGEOFF.FULL.AMOUNT.ALLOCATE.b`.
+- `ALLOCATE.PAYMENT` helper
+  - lấy repayment amount customer-side.
+  - allocate sang bank/chargeoff side.
+  - update bill payment/property amounts qua `AA.PayoutRules.UpdateBillPaymentAmounts(...)`.
+  - update `AA.ACTIVITY.BALANCES` cho phần remainder/special income.
+- `FULL.AMOUNT.ALLOCATE` helper
+  - gọi `AA.ChargeOff.CreateChargeoffDetails(...)`.
+  - đọc bill `CHARGEOFF`, lấy `AA.BILL.DETAILS`, rồi gọi `AA.ChargeOff.UpdateChargeoffAmounts(...)` cho từng bill property.
+  - reverse path còn gọi `AA.ChargeOff.UpdateChargeoffDetails(..., "FULL.CHARGEOFF", ...)`.
+
+### CHANGE.PRODUCT
+
+#### Field đã chốt
+- `CHANGE.DATE.TYPE`
+  - chọn giữa ngày tương đối theo kỳ và ngày nhập trực tiếp.
+- `CHANGE.PERIOD`
+  - kỳ tương đối để tính renewal/change date.
+- `CHANGE.DATE`
+  - ngày đổi sản phẩm cố định.
+- `CHANGE.ACTIVITY`
+  - activity sẽ được schedule để chạy đổi sản phẩm.
+- `PRIOR.DAYS`
+  - số ngày chạy sớm hơn ngày đổi sản phẩm.
+- `CHG.TO.PRODUCT`
+  - product đích.
+- `ALLOWED.PRODUCT`
+  - whitelist product được phép đổi sang.
+- `INITIATION.TYPE`
+  - `AUTO` hoặc `MANUAL`.
+- `DEFAULT.ACTIVITY`
+  - activity fallback khi không dùng `CHANGE.ACTIVITY`.
+
+#### Action đã chốt
+- `UPDATE`
+  - orchestration chính của change product.
+  - gọi `AA.Framework.SetScheduledActivity(...)` để add/cycle/delete renewal hoặc change-product activity trong `AA.SCHEDULED.ACTIVITY`.
+  - cập nhật `AA.ACCOUNT.DETAILS` ở label `UPDATE.ACCOUNT.DETAILS`.
+  - cập nhật `AA.ARRANGEMENT` ở flow `DO.ARRANGEMENT.UPDATE`.
+  - cập nhật amortisation ở `UPDATE.AMORTISATION.DETAILS`.
+- `REMOVE`
+  - dùng khi product mới không còn property change-product hoặc khi reverse/delete.
+  - gọi `AA.ChangeProduct.ChangeProductBundleValidation(...)`.
+  - lấy renewal activity kế tiếp bằng `AA.Framework.GetScheduledActivityDate(...)`.
+  - dọn `AA.SCHEDULED.ACTIVITY`, xóa renewal date trong `AA.ACCOUNT.DETAILS`, và cập nhật lại product details/amortisation.
+
+### LIMIT
+
+#### Field đã chốt
+- `LIMIT.REFERENCE` + `LIMIT.SERIAL`
+  - ghép thành limit reference thật dùng cho API limit.
+- `LIMIT.AMOUNT`
+  - amount hạn mức danh nghĩa.
+- `EXPIRY.DATE`
+  - ngày hết hiệu lực; source còn tính lại old/new expiry theo tenor.
+- `MANAGE.LIMIT`
+  - quyết định AA tự quản lý limit hay không.
+- `OD.STATUS`, `OD.PERIOD`, `SUSPEND`, `NOTICE.FREQUENCY`, `POSTING.RESTRICT`
+  - cụm cấu hình overdraft của limit.
+- `CREDIT.CHK.CONDITION`, `CREDIT.CHK.TXN.TYPE`
+  - cover/credit check control.
+- `USE.SECONDARY.LIMIT`, `SECONDARY.LIMIT.AMT`
+  - fallback sang hạn mức phụ.
+- `LIMIT`
+  - internal limit key.
+- `VALIDATION.LIMIT`
+  - id dùng cho bảng `ValidationLimitContracts`.
+
+#### Action đã chốt
+- `UPDATE`
+  - dựng `OLD.LIMIT.REF`, `NEW.LIMIT.REF`, `NEW.LAST.LIMIT.REF`.
+  - tính `OLD/NEW.EXPIRY.DATE` bằng `AA.Framework.DetermineTenorExpiryDate(...)`.
+  - gọi `AA.Limit.ProcessLimitChange(...)` ở `UNAUTH`, `DELETE`, `AUTH`.
+  - với DEAL + `VALIDATION.LIMIT`, gọi `LI.Config.LiUpdateLinkedContracts(...)`.
+  - facility under deal có thể chạy `AUTOMATIC.UTILISED.LIMIT.PROCESS`.
+- `CHANGE`
+  - xử lý đổi owner/customer hoặc thay binding limit.
+  - kiểm tra limit record hiện hữu.
+  - nếu `LIMIT.SERIAL = NEW` hoặc không đọc được record cũ thì set nhánh tạo limit mới.
+
+### PAYMENT.PRIORITY
+
+#### Field đã chốt
+- `APPLICATION.TYPE`
+  - payment rule type điều khiển allocate.
+- `PRIORITY.RULE`
+  - rule sort drawings/bills.
+- `PRIORITY.RULE.LIST`
+  - detail list của từng priority rule.
+- `REMAINDER.PAY.ACTIVITY`
+  - activity xử lý phần tiền dư sau allocate.
+- `ADVANCE.PAYMENT.METHOD`
+  - `PARTIAL` hoặc `FULL`.
+- `ADVANCE.PAYMENT.RESTRICTION`
+  - ràng buộc advance payment.
+
+#### Action đã chốt
+- `ALLOCATE`
+  - đọc rule hiệu lực bằng `GetFinancialAllocationRule(...)` và `GetPaymentRuleType(...)`.
+  - lấy drawings qua `AA.PaymentPriority.GetDrawingsArrangementDetails(...)`.
+  - nếu bill-based thì lấy bill qua `AA.PaymentPriority.GetDrawingsBillDetails(...)`.
+  - sort bằng `AA.PaymentPriority.SortDrawingsByRules(...)`.
+  - lấy due amounts bằng `AA.PaymentPriority.GetPropertyDueAmount(...)`.
+  - allocate bằng `AA.PaymentPriority.AllocateDrawingsRepaymentAmount(...)`.
+  - update `AA.ACTIVITY.BALANCES` qua `AA.Framework.ProcessActivityBalances(...)` + `UpdateActivityBalances(...)`.
+  - apply payment trên từng drawing qua `AA.PaymentPriority.ApplyPaymentPriority(...)`.
+  - remainder tạo AAA phụ bằng `AA.Framework.SecondaryActivityManager(...)`.
+  - delete/reverse path gọi `AA.PayoutRules.UpdateBillPaymentAmounts(..., "REVERSE", ...)`.
+- `UPDATE`
+  - wrapper change-condition, giống pattern update property đơn giản.
+
+### PRODUCT.BUNDLE
+
+#### Field đã chốt
+- `BUNDLE.CONSTITUTION`
+  - kiểu cấu thành bundle.
+- `PRODUCT.GROUP`, `PRODUCT`
+  - nhóm product và product được phép nằm trong bundle.
+- `MINIMUM`, `MAXIMUM`
+  - giới hạn số participant.
+- `ARRANGEMENT`, `ARR.CURRENCY`
+  - participant arrangement và currency của từng participant.
+- `ARR.INFO.ONLY`
+  - cờ participant chỉ để tham chiếu.
+- `MASTER.ARRANGEMENT`, `MASTER.TYPE`
+  - arrangement/property master của bundle.
+- `PARTICIPANT.OWNER`, `PARTICIPANT.CURRENCY`
+  - rule lọc participant theo owner/currency.
+- `REFERENCE.CCY`, `LIMIT.TYPE`, `MASTER.ACC.NAME`, `MASTER.LIVE.DATE`
+  - nhóm field phục vụ draft/pool administration/live-date.
+
+#### Action đã chốt
+- `UPDATE`
+  - lấy `R.NEW`, `R.OLD` hoặc previous property record.
+  - gọi `AA.ProductBundle.UpdateArrangementBundleLink(...)` để update link bundle trên bundle arrangement và donor/recipient arrangements.
+- `CHECK.LINKS`
+  - đọc product-level `PROPERTY.CONTROL` và `BUNDLE.HIERARCHY`.
+  - dùng `AA.Framework.DetermineNullArray(...)` để biết có definition thật không.
+  - trả cờ online/offline processing.
+- `CLOSE`
+  - lock từng arrangement participant.
+  - chèn hoặc xóa `ArrLinkDate/Type/Arrangement/Property/ArrangementType`.
+  - ghi lại `AA.ARRANGEMENT` bằng `AA.Framework.ArrangementWrite(...)`.
+  - auth path xử lý thêm `AC.BLOCK.CLOSURE`.
+- `UPDATE.LIVE.DATE`
+  - gom `MASTER.LIVE.DATE` và participant `LIVE.DATE`.
+  - remove duplicate.
+  - ghi pool administration list bằng `AB.Framework.UpdatePoolAdministrationList(...)`.
+
+### PROPERTY.CONTROL
+
+#### Field đã chốt
+- `PRODUCT.GROUP`, `PRODUCT`
+  - điều kiện lọc arrangement theo product/product group.
+- `PROPERTY.CLASS`, `PROPERTY`
+  - scope property hoặc class cần áp control.
+- `CURRENCY`
+  - điều kiện đồng tiền.
+- `PROPERTY.CONDITION`
+  - condition sẽ bị áp lại.
+- `CONTROL.MASTER`, `CONTROL.SECONDARY`
+  - cách xử lý cho master và secondary arrangement.
+- `SOURCE.PRODUCT`
+  - product nguồn sinh ra property control; `NOINPUT`.
+
+#### Action đã chốt
+- `UPDATE`
+  - auth path đọc record `PRODUCT.BUNDLE` hiện tại bằng `AA.ProductFramework.GetPropertyRecord(...)`.
+  - đọc previous bundle bằng `AA.Framework.GetPreviousPropertyRecord(...)`.
+  - so sánh thay đổi arrangement/info-flag bằng `AA.Framework.DetermineChangeValues(...)`.
+  - với từng arrangement thay đổi, đọc product bằng `AA.Framework.GetArrangementProduct(...)`.
+  - nếu match rule control thì gọi `AA.Framework.ManageExternalActivities(...)` để append/update `APPLY.PC.CHANGE`.
+
+### PRICING.RULES
+
+#### Field đã chốt
+- `PLAN.SELECT.METHOD`, `PLAN.SELECT.TYPE`, `PLAN.SELECT.PROPERTY`
+  - cụm chọn pricing plan.
+- `PLAN.RESET.FREQ`, `PLAN.RESET.ON.ACT`
+  - cụm reset pricing plan.
+- `PROGRAM.LIMIT`, `SELECTED.PROGRAM`, `PRICING.PROGRAM`
+  - cụm program selection.
+- `RULE.NAME`, `RULE.SOURCE`, `RULE.VALUE`
+  - rule evaluation input.
+- `PRICING.BENEFIT`, `PRICING.PROPERTY`, `TRIGGER`, `EVALUATION.RESULT`
+  - cụm benefit/property chịu tác động.
+
+#### Action đã chốt
+- `UPDATE`
+  - đọc property `ACCOUNT` để lấy `DATE.CONVENTION`, `DATE.ADJUSTMENT`, `BUS.DAYS`.
+  - gọi `AA.Rules.GetRecalcDate(...)` để tính `NEXT.CYCLED.DATE`.
+  - ghi `AA.SCHEDULED.ACTIVITY` cho `PLAN.RESET` bằng `AA.Framework.SetScheduledActivity(...)`.
+  - nếu property pricing bị xóa khỏi record mới, dựng `CLEAR.ASSESSMENT` AAA phụ và append qua `AA.Framework.SecondaryActivityManager(...)`.
+  - new arrangement còn có thể dựng `POST.ASSESSMENT` secondary activity.
+- `REMOVE`
+  - input path xóa `PLAN.RESET` schedule hiện có.
+  - reverse/delete path đọc property cũ rồi amend lại `PLAN.RESET`.
+
+### PRICING.GRID
+
+#### Field đã chốt
+- `CRITERION.ID`
+  - data element id của tiêu chí.
+- `TARGET.ID`
+  - target element nhận output của grid.
+- `DEFAULT`
+  - giá trị fallback của grid.
+- `TIER.TYPE`
+  - `SINGLE`, `LEVEL`, `BAND`.
+- `CRITERION.1..10`
+  - giá trị criterion tương ứng từng criterion id.
+- `TARGET.1..10`
+  - giá trị output của từng tier/band.
+
+#### Action đã chốt
+- `UPDATE`
+  - đọc `GridCriterionId` và `GridCriterion1..10` từ `R.NEW`.
+  - với criterion type `PROPERTY`, gom property duy nhất bằng `AA.Framework.DataElements.Read(...)`.
+  - ghi reference details qua `AA.Framework.UpdateReferenceDetails(...)` với `UpdateType = "PRICING.GRID"`.
+  - đọc old/new source-target property bằng `AA.PricingGrid.GetSourceAndTargetProperty(...)`.
+  - nếu mapping đổi, gọi `AA.PricingGrid.UpdateArrangementGridLink(...)` để remove/add arrangement links.
+  - nếu level = 1 thì gọi `AA.PricingGrid.UpdateCustomerGridLink(...)` để add/delete customer links.
