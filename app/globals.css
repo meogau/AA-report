@@ -418,6 +418,58 @@ textarea {
   gap: 14px;
 }
 
+.field-table-wrap {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.82);
+  border-radius: 22px;
+  overflow: hidden;
+}
+
+.field-table {
+  display: grid;
+}
+
+.field-table-head,
+.field-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.8fr);
+}
+
+.field-table-head {
+  background: rgba(13, 138, 106, 0.08);
+  color: var(--accent-strong);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.field-table-head > div,
+.field-row > div {
+  padding: 16px 18px;
+}
+
+.field-row {
+  border-top: 1px solid var(--line);
+}
+
+.field-name {
+  border-right: 1px solid var(--line);
+  background: rgba(255, 250, 241, 0.72);
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.field-meaning {
+  display: grid;
+  gap: 8px;
+}
+
+.field-meaning p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
 .detail-card {
   padding: 18px;
   border: 1px solid var(--line);
@@ -484,5 +536,18 @@ textarea {
   .search-center input {
     padding: 18px 20px;
     font-size: 1rem;
+  }
+
+  .field-table-head {
+    display: none;
+  }
+
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+
+  .field-name {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
   }
 }

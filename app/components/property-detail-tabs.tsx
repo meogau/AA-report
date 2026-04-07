@@ -7,17 +7,23 @@ type TabKey = "fields" | "actions";
 
 function FieldsTab({ fields }: { fields: PropertyField[] }) {
   return (
-    <div className="stack">
-      {fields.map((field) => (
-        <article className="detail-card" key={field.name}>
-          <strong>{field.name}</strong>
-          <div className="detail-list">
-            {field.details.map((detail, index) => (
-              <p key={`${field.name}-${index}`}>{detail}</p>
-            ))}
-          </div>
-        </article>
-      ))}
+    <div className="field-table-wrap">
+      <div className="field-table">
+        <div className="field-table-head">
+          <div>Tên trường</div>
+          <div>Ý nghĩa</div>
+        </div>
+        {fields.map((field) => (
+          <article className="field-row" key={field.name}>
+            <div className="field-name">{field.name}</div>
+            <div className="field-meaning">
+              {field.details.map((detail, index) => (
+                <p key={`${field.name}-${index}`}>{detail}</p>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
     </div>
   );
 }
