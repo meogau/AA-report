@@ -69,17 +69,41 @@ export function searchPropertyClasses(query: string) {
     return items;
   }
 
-  return items.filter((item) => {
-    const haystack = [
-      item.name,
-      item.fields.map((field) => field.name).join(" "),
-      item.actions.map((action) => action.name).join(" ")
-    ]
-      .join(" ")
-      .toLowerCase();
+  const ranked = items
+    .map((item) => {
+      const normalizedName = item.name.toLowerCase();
+      const normalizedSlug = item.slug.toLowerCase();
+      const fieldHaystack = item.fields.map((field) => field.name).join(" ").toLowerCase();
+      const actionHaystack = item.actions.map((action) => action.name).join(" ").toLowerCase();
 
-    return haystack.includes(normalized);
-  });
+      let rank = -1;
+
+      if (normalizedName === normalized) {
+        rank = 0;
+      } else if (normalizedName.startsWith(normalized)) {
+        rank = 1;
+      } else if (normalizedSlug.startsWith(normalized)) {
+        rank = 2;
+      } else if (normalizedName.includes(normalized)) {
+        rank = 3;
+      } else if (fieldHaystack.includes(normalized)) {
+        rank = 4;
+      } else if (actionHaystack.includes(normalized)) {
+        rank = 5;
+      }
+
+      return { item, rank };
+    })
+    .filter((entry) => entry.rank >= 0)
+    .sort((left, right) => {
+      if (left.rank !== right.rank) {
+        return left.rank - right.rank;
+      }
+
+      return left.item.name.localeCompare(right.item.name);
+    });
+
+  return ranked.map((entry) => entry.item);
 }
 
 export function getPropertyClassBySlug(slug: string) {
