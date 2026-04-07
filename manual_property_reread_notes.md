@@ -254,6 +254,132 @@ Nguyên tắc:
   - lấy APR rates từ `CW.CashFlow.StFetchAprRate(...)`.
   - đối chiếu `APR.TYPE` và rate với account property, raise problem category nếu lệch.
 
+### Batch kế tiếp đã đọc lại và đưa sang web override
+
+#### AC.ACCT.GROUP.CONDN
+- Source đã đọc:
+  - `T24.BP/AA.AC.ACCT.GROUP.CONDN.FIELDS.b`
+- Chốt từ `FIELDS`:
+  - nhóm `THRESHOLD / TXN.CODE.GRP / WAIVE.CR.INT / NO.VIOLATION`.
+  - `RETENTION.PERIOD` kiểu `PRD`.
+  - `PREMIUM.TYPE` check `SAVINGS.PREMIUM`.
+  - `CHARGE.PENDING.CAT`, `TAX.PENDING.CAT` check `CATEGORY`.
+  - `CREDIT.CHECK` chọn giữa `WORKING`, `FORWARD`, `AVAILABLE`, `AVAILWORK`, `AVAILFWD`.
+  - `AVAILABLE.BAL.UPD` chọn `BOTH`, `NONE`, `DEBITS`, `CREDITS`.
+  - `DEBIT.RESTRICT`, `RESTRICTED.MSG`, `NOTICE.*`.
+- Chưa thấy action/update routine riêng trong batch source hiện tại.
+
+#### AC.GENERAL.CHARGE
+- Source đã đọc:
+  - `T24.BP/AA.AC.GENERAL.CHARGE.FIELDS.b`
+- Chốt từ `FIELDS`:
+  - nhóm charge config classic như `DEBIT.INT.ADDON`, `GOVERNMENT.MARGIN`, `HIGHEST.DEBIT`, `STATEMENT.CHARGE`.
+  - nhóm transaction-code charge: `TRANS.CODE.CHARGE`, `COMB.TRNS.CHRG.CODE`, `TR.CODE.CR`, `TR.CODE.DR`, `CHARGE.CODE.LEVEL`.
+  - nhóm offset charge: `PERCT.FOR.OFFSET`, `OFFSET.BAL.TYPE`, `OFFSET.CURRENCY`, `MIN.AV.BAL`, `DAY.BASIS`, `BAL.NO.OFFSET`, `LOW.AMT.CHARGE`.
+  - nhóm interest charge balance: `INT.CHRG.BAL.TYPE`, `INT.CHARGE.DEF.BAL`, `INT.CHRG.CCY`, `INT.CHRG.BAL`.
+- Chưa thấy action/update routine riêng trong batch source hiện tại.
+
+#### AC.GROUP.CAP
+- Source đã đọc:
+  - `T24.BP/AA.AC.GROUP.CAP.FIELDS.b`
+- Chốt từ `FIELDS`:
+  - `DR.CAP.FREQUENCY`, `DR2.CAP.FREQUENCY`, `CR.CAP.FREQUENCY`, `CR2.CAP.FREQUENCY`.
+  - `SETTLE.ACCT.CLOSE`.
+  - `START.OF.DAY.CAP`.
+- Chưa thấy action/update routine riêng trong batch source hiện tại.
+
+#### AC.GROUP.INTEREST
+- Source đã đọc:
+  - `T24.BP/AA.AC.GROUP.INTEREST.FIELDS.b`
+- Chốt từ `FIELDS`:
+  - nhóm credit minimum/waive/offset/zero-interest/open-close accrual.
+  - nhóm debit minimum/waive.
+  - `MAX.LEGAL.RATE`, `MAX.DEBIT.CHG.RATE`, `APR.REQUIRED`.
+  - `BAL.CALC.ROUTINE`.
+  - `DEFER.DB.INT.DAYS`, `DB.INT.PENDING.CAT`.
+  - `INT.POST.PERIOD`, `RATE.CHANGE.ADVICE`, `ADVICE.TYPE`.
+  - nhóm tax/rounding/balance type cho credit và debit.
+- Chưa thấy action/update routine riêng trong batch source hiện tại.
+
+#### ACCOUNT.CONSENT
+- Source đã đọc:
+  - `T24.BP/AA.ACCOUNT.CONSENT.FIELDS.b`
+  - `T24.BP/AA.ACCOUNT.CONSENT.UPDATE.b`
+  - `T24.BP/AA.ACCOUNT.CONSENT.VALIDATE.b`
+  - `T24.BP/AA.ACCOUNT.CONSENT.EXPIRE.b`
+  - `T24.BP/AA.ACCOUNT.CONSENT.CLOSE.b`
+- Chốt từ `FIELDS`:
+  - nhóm TPP và signup: `EB.EXTERNAL.USER.ID`, `SIGNUP.SERVICE`, `TPP.REFERENCE`, `TPP.NAME`, `ACCESS.FREQUENCY`.
+  - nhóm consent tổng: `DEF.CONSENT.TYPE`, `EXT.REF.ID`, `RECURRING.INDICATOR`, `CONSENT.ID`, `ONLINE.ARRANGEMENT`.
+  - nhóm account-level: `ACCOUNT.ID`, `ACC.CONSENT.TYPE`, `ACC.BLOCK`, `ACC.BLOCK.FROM/TILL/NOTES`, `CONSENT.GIVEN`.
+  - nhóm expiry/status: `EXPIRY.PERIOD`, `EXPIRY.DATE`, `CONSENT.STATUS`, `LAST.ACTION.DATE`.
+- Chốt từ `VALIDATE`:
+  - designer validate `EXPIRY.PERIOD`.
+  - arrangement validate TPP reference qua `F.PZ.OPEN.BANKING.DIR.ALTERNATE.ID`.
+  - validate/default account blocks, expiry date, signup service, consent status, default account ids.
+- Chốt từ `UPDATE`:
+  - `UNAUTH` expand granular consent types bằng `PZ.Consent.PzGetGranularConsent(...)`.
+  - `AUTH` update TPP XREF, set `valid` status, set/reset `CONSENT.ID`, schedule expiry activity và close-arrangement activity.
+  - nhánh duplicate update thẳng `F.AA.ARR.ACCOUNT.CONSENT`.
+- Chốt từ `EXPIRE`:
+  - auth path set status `expired` nếu `EXPIRY.DATE` rơi vào khoảng hôm nay đến trước next working day.
+  - update lại TPP XREF.
+- Chốt từ `CLOSE`:
+  - auth path update TPP XREF cho consent close nếu effective date không vượt period end.
+
+#### ACTIVITY.API
+- Source đã đọc:
+  - `T24.BP/AA.ACTIVITY.API.FIELDS.b`
+  - `T24.BP/AA.ACTIVITY.API.VALIDATE.b`
+- Chốt từ `FIELDS`:
+  - bộ key gồm `ACTIVITY.CLASS/ACTIVITY.ID`, `PROPERTY.CLASS/PROPERTY`, `PC.ACTION`.
+  - bộ routines gồm `PRE.ROUTINE`, `POST.ROUTINE`, `RECORD.RTN`, `VALIDATE.RTN`, `PRE.VALIDATE.RTN`.
+- Chốt từ `VALIDATE`:
+  - bắt buộc phải có một trong activity class/activity id và một trong property class/property.
+  - không cho nhập đồng thời class và id.
+  - build list `ACTIVITY.CLASS*ACTIVITY.ID*PROPERTY.CLASS*PROPERTY*ACTION` để check duplicate.
+  - validate action qua `AA.Framework.ValidateAction(...)`.
+  - check duplicate conditions và duplicate routines.
+
+#### ACTIVITY.MAPPING
+- Source đã đọc:
+  - `T24.BP/AA.ACTIVITY.MAPPING.FIELDS.b`
+  - `T24.BP/AA.ACTIVITY.MAPPING.UPDATE.b`
+  - `T24.BP/AA.ACTIVITY.MAPPING.VALIDATE.b`
+- Chốt từ `FIELDS`:
+  - nhóm transaction mapping: `TRANSACTION`, `TXN.SERVICE.GROUP`, `TXN.ACTIVITY`.
+  - nhóm default debit/credit: `DEF.CR.ACTIVITY`, `DEF.DB.ACTIVITY`, `DEF.CR/DB.SERVICE.GROUP`.
+  - nhóm event mapping: `EVENT.REF`, `EVENT.ACTIVITY`, `EVENT.SERVICE.GROUP`, `DEF.EVENT.ACTIVITY`, `DEF.EVENT.SERVICE.GROUP`.
+- Chốt từ `UPDATE`:
+  - `UNAUTH`, `DELETE`, `REVERSE` chỉ gọi `AA.Framework.UpdateChangeCondition()`.
+- Chốt từ `VALIDATE`:
+  - validate financial mapping bằng `AA.Framework.ValidateAllowedActivity(...)`.
+  - transaction codes phải unique.
+  - arrangement level bắt buộc `DEF.EVENT.ACTIVITY` nếu product có facility property.
+
+#### ACTIVITY.MESSAGING
+- Source đã đọc:
+  - `T24.BP/AA.ACTIVITY.MESSAGING.FIELDS.b`
+  - `T24.BP/AA.ACTIVITY.MESSAGING.UPDATE.b`
+  - `T24.BP/AA.ACTIVITY.MESSAGING.SEND.MESSAGE.b`
+  - `T24.BP/AA.ACTIVITY.MESSAGING.VALIDATE.b`
+  - `T24.BP/AA.ACTIVITY.MESSAGING.RECORD.b`
+- Chốt từ `FIELDS`:
+  - `ADVICE`, `ACTIVITY.CLASS`, `ACTIVITY.ID`, `MSG.CONTENT`, `ROLE`, `SEND.ADVICE`, `PRE.NOTICE.ACTIVITY`, `PRE.NOTICE.DAYS`.
+- Chốt từ `VALIDATE`:
+  - default `SEND.ADVICE = YES`, `MSG.CONTENT = ALL`.
+  - nếu có cả activity class và activity id thì phải khớp nhau.
+  - `PRE.NOTICE.ACTIVITY` phải thuộc loại scheduled phù hợp; arrangement level sẽ tạo system activity `...*PRE.NOTICE`.
+  - role field duplicate/null checked.
+- Chốt từ `RECORD`:
+  - nếu công ty không cài `DE`, field `ADVICE` bị set `NOINPUT`.
+- Chốt từ `UPDATE`:
+  - với new/update arrangement, routine lấy next scheduled date của `PRE.NOTICE.ACTIVITY`, tính pre-notice date rồi amend `AA.SCHEDULED.ACTIVITY`.
+  - sau đó gọi `AA.Framework.UpdateChangeCondition()`.
+- Chốt từ `SEND.MESSAGE`:
+  - build handoff record gồm arrangement, AAA, account details, header, customer, account, property names và property records.
+  - chỉ process khi role customer phù hợp và `SEND.ADVICE = YES`.
+
 ## Ghi nhận lại từ source trong vòng mới
 
 ### SETTLEMENT

@@ -3,6 +3,7 @@ import { manualCoreOverrides } from "@/lib/manual-core-overrides";
 import { manualFifthOverrides } from "@/lib/manual-fifth-overrides";
 import { manualNextOverrides } from "@/lib/manual-next-overrides";
 import { manualFourthOverrides } from "@/lib/manual-fourth-overrides";
+import { manualSixthOverrides } from "@/lib/manual-sixth-overrides";
 import { manualThirdOverrides } from "@/lib/manual-third-overrides";
 
 export type PropertyField = {
@@ -41,7 +42,8 @@ const manualOverrides = {
   ...manualNextOverrides,
   ...manualThirdOverrides,
   ...manualFourthOverrides,
-  ...manualFifthOverrides
+  ...manualFifthOverrides,
+  ...manualSixthOverrides
 };
 const items = payload.items.map((item) => manualOverrides[item.slug] ?? item);
 const summary = {
