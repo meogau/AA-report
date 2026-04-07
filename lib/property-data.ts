@@ -1,5 +1,6 @@
 import propertyData from "@/data/property-data.json";
 import { manualCoreOverrides } from "@/lib/manual-core-overrides";
+import { manualFifthOverrides } from "@/lib/manual-fifth-overrides";
 import { manualNextOverrides } from "@/lib/manual-next-overrides";
 import { manualFourthOverrides } from "@/lib/manual-fourth-overrides";
 import { manualThirdOverrides } from "@/lib/manual-third-overrides";
@@ -39,7 +40,8 @@ const manualOverrides = {
   ...manualCoreOverrides,
   ...manualNextOverrides,
   ...manualThirdOverrides,
-  ...manualFourthOverrides
+  ...manualFourthOverrides,
+  ...manualFifthOverrides
 };
 const items = payload.items.map((item) => manualOverrides[item.slug] ?? item);
 const summary = {

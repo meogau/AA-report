@@ -109,6 +109,151 @@ Nguyên tắc:
 - `PAYMENT.RULES`: đã khóa được các action gốc phải đọc là `ALLOCATE`, `CREATE.DUE`, `PRE.BILL`; chưa đi sâu logic.
 - `PERIODIC.CHARGES`: đã khóa được bộ action đầy đủ hơn web hiện tại, gồm `ISSUE.BILL`, `MAKE.DUE`, `REPAY`, `PAY`, `ACCRUE`, `CAPITALISE`, `DEFER.*`, `PAYOFF.CAPITALISE`, `BILL.*`, `ADJUST.*`.
 
+### Batch tiếp theo đã đọc lại và đưa sang web override
+
+#### CONSTRAINT
+- Source đã đọc:
+  - `T24.BP/AA.CONSTRAINT.FIELDS.b`
+  - `T24.BP/AA.CONSTRAINT.UPDATE.b`
+- Chốt từ `FIELDS`:
+  - `TYPE` nhận các giá trị `INTEREST.PERIOD`, `STATEMENT.PERIOD`, `RENEWAL_PERIOD`, `FINANCIAL.YEAR`, `DATE`.
+  - `RESULT` là `ERROR` hoặc `OVERRIDE`.
+  - `ERROR.MESSAGE` check sang `EB.ERROR`.
+  - `OVERRIDE.MESSAGE` check sang `OVERRIDE`.
+  - `ACTIVITY.FUNCTION` chỉ ra constraint chạy ở `INPUT` hay `REVERSE`.
+- Chốt từ `UPDATE`:
+  - routine hiện chỉ là khung status/error/logging.
+  - chưa thấy source tự `READ`/`WRITE` bảng business.
+
+#### CUSTOMER
+- Source đã đọc:
+  - `T24.BP/AA.CUSTOMER.FIELDS.b`
+  - `T24.BP/AA.CUSTOMER.UPDATE.b`
+  - `T24.BP/AA.CUSTOMER.PROCESS.b`
+  - `T24.BP/AA.CUSTOMER.DATACAPTURE.b`
+- Chốt từ `FIELDS`:
+  - `CUSTOMER`, `CUSTOMER.ROLE` là cặp field chính để ghi owner/joint holder.
+  - `TAX.LIABILITY.PERC`, `LIMIT.ALLOC.PERC`, `GL.ALLOC.PERC` là các tỷ lệ phân bổ theo customer.
+  - `DELIVERY.REQD` mở cho arrangement level.
+  - `JS.LIABLE` là joint and several liability.
+  - `OTHER.PARTY`, `ROLE`, `NOTES` mở thêm đối tượng liên quan ngoài owner chính.
+  - `CRA.CUSTOMER` là customer được đưa sang CRA.
+- Chốt từ `UPDATE`:
+  - `CHANGE-CUSTOMER` current/backdated gọi `AA.Framework.UpdateArrangement(...)` để cập nhật `AA.ARRANGEMENT`.
+  - concat customer được update qua `AA.Framework.UpdateCustomerArrangement(...)` với các mode `UNAUTH`, `UNAUTH-DELETE`, `UPDATE`, `DELETE`.
+  - auth/reverse change customer còn gọi `ST.DormancyMonitor.CdmTriggerHandoff(...)` cho customer mới/cũ.
+  - `FACILITY` change customer ở `UNAUTH` sẽ cascade xuống drawings bằng `AA.Customer.DrawingsCustomerChange(...)`.
+  - `AUTH`/`AUTH-REV` còn gọi `AA.Customer.UpdateCraDetails(...)`.
+- Chốt từ `PROCESS`:
+  - chỉ cập nhật `AA.ARRANGEMENT.SIM` qua `UpdateArrangement(...)` với cờ simulation.
+- Chốt từ `DATACAPTURE`:
+  - lấy narrative từ AAA, nối `-External`, set vào `CusNotes`.
+
+#### DORMANCY
+- Source đã đọc:
+  - `T24.BP/AA.DORMANCY.FIELDS.b`
+  - `T24.BP/AA.DORMANCY.UPDATE.b`
+  - `T24.BP/AA.DORMANCY.EVALUATE.b`
+  - `T24.BP/AA.DORMANCY.SET.b`
+- Chốt từ `FIELDS`:
+  - `STATUS`, `PERIOD`, `NOTICE.DAYS`, `NOTICE.FREQ`, `CHARGE.FREQUENCY` điều khiển status và lịch dormancy.
+  - `EXCEPTION.API`, `EXCEPTION.RULE` phục vụ exception processing.
+  - `ACTIVITY.INITIATION`, `ACTIVITY.CLASS`, `ACTIVITY.NAME`, `INCLUDE.INDICATOR` là bộ lọc active activity.
+  - `AUTO.RESET.STATUS`, `AUTO.RESET.ACTIVITY` điều khiển reset dormancy.
+- Chốt từ `UPDATE`:
+  - ghi dormancy vào `AA.ACCOUNT.DETAILS` qua `AA.PaymentSchedule.ProcessAccountDetails(...)`.
+  - auth/auth-rev gọi `ST.DormancyMonitor.CdmTriggerHandoff(...)`.
+- Chốt từ `EVALUATE`:
+  - dùng `DetermineDormancyStatus`, `GetDormancyBaseDetails`, `EvaluateActiveActivityDate`, `EvaluateExceptionRules`.
+  - nếu đủ điều kiện thì tạo set-dormancy secondary activity, nếu không thì store exception.
+- Chốt từ `SET`:
+  - lấy target status từ current activity.
+  - cập nhật `AA.ACCOUNT.DETAILS`.
+  - reschedule evaluation/notice/charge theo status mới.
+
+#### ELIGIBILITY
+- Source đã đọc:
+  - `T24.BP/AA.ELIGIBILITY.FIELDS.b`
+  - `T24.BP/AA.ELIGIBILITY.MAINTAIN.b`
+- Chốt từ `FIELDS`:
+  - `RULE`, `FAILURE.TYPE`, `FAILURE.ACTION` là nhóm quyết định eligibility outcome.
+  - `CUSTOMER.ROLE`, `ROLE.RULE`, `ROLE.FAILURE.*` là nhóm xét riêng theo role.
+  - `CHANGE.ACTIVITY` là activity sẽ dùng khi eligibility fail.
+  - `PERIODIC.REVIEW`, `REVIEW.FREQUENCY`, `LAST.RUN.DATE` phục vụ periodic review.
+  - `ELIGIBILE.DEFAULT.PRD` là product fallback khi phải change product.
+- Chốt từ `MAINTAIN`:
+  - đọc property `ACCOUNT` để lấy date convention/date adjustment/bus days.
+  - gọi `AA.Rules.GetRecalcDate(...)` để tính `NEXT.CYCLED.DATE`.
+  - cập nhật `AA.SCHEDULED.ACTIVITY` cho periodic eligibility review.
+  - luôn gọi `AA.Framework.UpdateChangeCondition()`.
+
+#### EVIDENCE
+- Source đã đọc:
+  - `T24.BP/AA.EVIDENCE.FIELDS.b`
+  - `T24.BP/AA.EVIDENCE.UPDATE.b`
+- Chốt từ `FIELDS`:
+  - nhóm `COVENANT.*` định nghĩa requirement, rule, start date, frequency, consequence cho covenant.
+  - nhóm `CONDITION.*` định nghĩa evidence requirement và due activity cho condition.
+- Chốt từ `UPDATE`:
+  - bỏ qua khi replay mode.
+  - auth chuẩn hóa effective date với today.
+  - chọn mode `UPDATE`, `AMEND`, `REVERSE` bằng `GET.MODE`.
+  - handoff sang EV bằng `AA.Evidence.ProcessEvidenceUpdate(...)`.
+  - auth-rev của non-new arrangement sẽ đọc previous property rồi amend lại.
+
+#### INHERITANCE
+- Source đã đọc:
+  - `T24.BP/AA.INHERITANCE.FIELDS.b`
+  - `T24.BP/AA.INHERITANCE.UPDATE.b`
+- Chốt từ `FIELDS`:
+  - nhóm target gồm `DEFAULT.TARGET.INHERITANCE`, `TARGET.PROPERTY`, `TARGET.INHERITANCE`.
+  - nhóm source gồm `SOURCE.PRODUCT`, `SOURCE.PROPERTY`, `DEFAULT.SOURCE.INHERITANCE`, `DEF.SOURCE.PROPERTY`, `SOURCE.CURRENCY`, `SOURCE.INHERITANCE`.
+- Chốt từ `UPDATE`:
+  - chỉ ở `UNAUTH` mới xử lý.
+  - nếu activity là `CHANGE.SOURCE`, `CHANGE.TARGET`, `CHANGE.PARENT`, `TRANSFORM` và có `FacilityFlag` hoặc `ArrangementLinkType` thì append secondary activity `<ProductLine>-INHERIT-ARRANGEMENT`.
+
+#### OFFICERS
+- Source đã đọc:
+  - `T24.BP/AA.OFFICERS.FIELDS.b`
+  - `T24.BP/AA.OFFICERS.UPDATE.b`
+- Chốt từ `FIELDS`:
+  - `PRIMARY.OFFICER`, `OTHER.OFFICER`, `OFFICER.ROLE`, `NOTES`.
+- Chốt từ `UPDATE`:
+  - `UNAUTH`, `DELETE`, `REVERSE` chỉ gọi `AA.Framework.UpdateChangeCondition()`.
+  - chưa thấy source update file officer riêng.
+
+#### REPORTING
+- Source đã đọc:
+  - `T24.BP/AA.REPORTING.FIELDS.b`
+  - `T24.BP/AA.REPORTING.UPDATE.b`
+  - `T24.BP/AA.REPORTING.UPDATE.STAGE.b`
+  - `T24.BP/AA.REPORTING.UPDATE.CASHFLOW.b`
+  - `T24.BP/AA.REPORTING.TRIGGER.b`
+  - `T24.BP/AA.REPORTING.POSITION.MANAGEMENT.b`
+  - `T24.BP/AA.REPORTING.INTEGRITY.CHECK.b`
+- Chốt từ `FIELDS`:
+  - `IAS.CLASSIFICATION`, `IAS.SUBTYPE`, `MARKET.KEY`, `MARKET.MARGIN`, `MARGIN.OPERAND`.
+  - nhóm `ACTIVITY.NAME`, `CASH.FLOW`, `PROPERTY`, `EXCLUDE.EIR`.
+  - `EXPECTED.TERM`.
+  - nhóm PM gồm `DEALER.DESK`, `PROPERTY.CLASS`, `PROPERTY.ID`, `POS.CLASS.*`, `APR.TYPE`, `LINKED.INT.PROPERTY`.
+- Chốt từ `UPDATE`:
+  - chỉ track `UpdateChangeCondition()`.
+- Chốt từ `UPDATE.STAGE`:
+  - đọc `EB.CASHFLOW`, đọc `AA.ACCOUNT.DETAILS`, cập nhật `AdRiskStage`, set lại account details.
+- Chốt từ `UPDATE.CASHFLOW`:
+  - lấy `START.DATE` từ master activity.
+  - input map cashflow events rồi gọi `AA.Reporting.UpdateCashflow(...)`.
+  - delete gọi `UpdateCashflow(..., "DEL", ...)`.
+  - reverse đếm activity bằng `AA.Rules.GetActivityCount(...)` để quyết định `REV` hay amend.
+- Chốt từ `TRIGGER`:
+  - dùng `CheckPmProcessRequired(...)`, `DeterminePmMode(...)`, `PM.Engine.UpdateListWrite(...)`.
+- Chốt từ `POSITION.MANAGEMENT`:
+  - đọc `AA.ARRANGEMENT`, property `ACCOUNT`, `CURRENCY`, reporting details, reset conditions, cashflow details rồi handoff PM.
+- Chốt từ `INTEGRITY.CHECK`:
+  - đọc reporting/account property bằng `GetArrangementConditions(...)`.
+  - lấy APR rates từ `CW.CashFlow.StFetchAprRate(...)`.
+  - đối chiếu `APR.TYPE` và rate với account property, raise problem category nếu lệch.
+
 ## Ghi nhận lại từ source trong vòng mới
 
 ### SETTLEMENT
