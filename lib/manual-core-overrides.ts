@@ -507,62 +507,68 @@ export const manualCoreOverrides: Record<string, PropertyClass> = {
       {
         name: "MAKE.DUE CHARGE",
         routine: "AA.CHARGE.MAKE.DUE.b",
-        summary: "Wrapper điều phối make due charge; logic bill-level thật nằm trong routine xử lý charge make due lõi.",
+        summary: "Action này lấy các bill `DUE/PAY` của charge trong ngày hiệu lực, tính amount due, waive, suspend, kiểm tra accrual hoặc amort, rồi dựng accounting make-due và cập nhật bill nếu charge đã bị adjust về 0.",
         steps: [
-          "Bước 1: routine lấy context activity, effective date, maturity date và property charge hiện tại.",
-          "Bước 2: ở nhánh input hoặc delete, routine gọi `AA.Fees.ProcessChargeMakeDue(...)` với arrangement id, action, maturity date, status activity, reversal mode và property.",
-          "Bước 3: nếu routine lõi trả về `MULTI.EVENT.REC`, file này gọi `AA.Accounting.AccountingManager(...)` để đẩy queue accounting.",
-          "Bước 4: nếu property có participant thì routine gọi thêm `AA.Fees.ChargeMakeDueParticipant()`."
+          "Bước 1: `AA.CHARGE.MAKE.DUE.b` lấy context AAA, `EFFECTIVE.DATE`, `MATURITY.DATE`, `PROPERTY` rồi rẽ nhánh theo status `UNAUTH`, `DELETE`, `AUTH`, `REVERSE`, `DELETE-REV`.",
+          "Bước 2: ở các nhánh input/reverse/delete, routine gọi thẳng `AA.PROCESS.CHARGE.MAKE.DUE(ARRANGEMENT.ID, EFFECTIVE.DATE, ACTIVITY.ACTION, MATURITY.DATE, R.ACTIVITY.STATUS, R.FULL.ACTIVITY.STATUS, REVERSAL.MODE, PROPERTY, MULTI.EVENT.REC, PROCESS.ERROR)` để xử lý chi tiết bill-level.",
+          "Bước 3: nếu `MULTI.EVENT.REC` có dữ liệu, wrapper mới gọi `AA.Accounting.AccountingManager(REQD.PROCESS, PROPERTY, ACTIVITY.ACTION, EFFECTIVE.DATE, MULTI.EVENT.REC, RET.ERROR)` để post `VAL`, `AUT` hoặc `DEL`.",
+          "Bước 4: cuối routine, nếu arrangement có participant thì gọi thêm `AA.Fees.ChargeMakeDueParticipant()` để chạy accounting cho participant side."
         ],
         flow: [
-          "Bản thân file wrapper không tự đọc/ghi bill chi tiết.",
-          "Phần dựng event và xử lý bill được đẩy sang `AA.PROCESS.CHARGE.MAKE.DUE.b`."
+          "Wrapper này không tự đọc bill hay charge details.",
+          "Toàn bộ logic read `AA.BILL.DETAILS`, `AA.CHARGE.DETAILS`, handoff accrual và build event nằm ở routine lõi `AA.PROCESS.CHARGE.MAKE.DUE.b`."
         ]
       },
       {
         name: "PROCESS.CHARGE.MAKE.DUE",
         routine: "AA.PROCESS.CHARGE.MAKE.DUE.b",
-        summary: "Routine lõi của charge make due: đọc bill, waive, suspend, accrual/amort và build accounting entries.",
+        summary: "Routine lõi này thực sự xử lý charge make-due: đọc property `CHARGE`, chọn bill cần xử lý, lấy amount due/waive/suspend, dựng event accounting, handoff accrual hoặc amortisation và có thể cập nhật bill sang `SETTLED/REPAID`.",
         steps: [
-          "Bước 1: đọc property `CHARGE` hiện hành để lấy `InternalBooking` và `AccrualRule`, kiểm tra action bắt buộc phải là `MAKE.DUE`.",
-          "Bước 2: kiểm tra charge-off status; nếu full chargeoff thì xử lý lần lượt các subtype `BANK`, `CUST`, `CO`.",
-          "Bước 3: lấy bill `DUE` và `PAY`, đọc `BILL.DETAILS`, lọc theo `BdDueReference = AAA.ID`, rồi gọi `AA.PaymentSchedule.GetBillPropertyAmount(...)` để lấy amount due, waive, suspend của charge property.",
-          "Bước 4: nếu subtype `CO`, routine không lấy amount từ bill mà đọc `AA.CHARGE.DETAILS` theo `ChgDetPaymentDate` và `ChgDetBillId`.",
-          "Bước 5: gọi `AA.Fees.CheckAmortRequired(...)` để xác định charge này đang ở mode `ACCRUE` hay `AMORT`; khi cần thì gọi `AA.Framework.AccrualDetailsHandoff(...)` để cancel, tạo mới hoặc đổi amount accrual schedule.",
-          "Bước 6: dựng accounting cho các nhánh `DUE`, `PAY`, `ACCRUE`, `AMORT`, `SP`, `WAIVE`, `DEF`; nếu charge bị adjust về 0 thì routine cập nhật `BILL.STATUS = SETTLED`, `SETTLE.STATUS = REPAID` rồi ghi lại bill."
+          "Bước 1: `INITIALISE` reset các biến `PROPERTY.AMOUNT`, `BILL.REFERENCE`, `ACCRUE.AMORT`, `EVENT.DATE`, `DEBIT.BALANCE.TYPE`, lấy `AAA.ID`, `ACTIVITY.ID`, `MASTER.ACT.CLASS`, cờ payoff/closure và participant details. `GET.INT.BOOKING` đọc property `CHARGE` bằng `AA.ProductFramework.GetPropertyRecord(...)` để lấy `INTERNAL.BOOKING` và `ACCRUAL.RULE`.",
+          "Bước 2: `CHECK.CHARGEOFF.STATUS` gọi `AA.ChargeOff.GetChargeoffDetails(...)`; nếu full chargeoff thì loop qua `SUB.TYPE = BANK`, `CUST`, `CO`, nếu không thì xử lý một vòng mặc định.",
+          "Bước 3: `GET.BALANCE.TYPES` resolve các balance type thực sự bằng `AA.ProductFramework.PropertyGetBalanceName(...)`: balance credit `PAY`, debit `DUE`, amort `ACC`, defer `DEF`. Nếu `SUB.TYPE = CO`, `GET.CHARGE.DETAILS` gọi `AA.ActivityCharges.ProcessChargeDetails(..., 'INIT', ...)` rồi đọc `AA.Framework.getChargeDetails()` để lấy `AA.CHARGE.DETAILS`.",
+          "Bước 4: `GET.BILL` lấy bill non-deferred và deferred bằng `AA.PaymentSchedule.GetBill(...)` cho `PAYMENT.METHOD = DUE/PAY`; nếu closure/payoff thì nó lấy bill từ `PREVIOUS.PAYMENT.DATE`. Với từng bill, `GET.BILL.DETAILS` đọc `AA.BILL.DETAILS`, bỏ các bill có `BdDueReference` không khớp `AAA.ID` hoặc bill defer không thuộc activity hiện tại.",
+          "Bước 5: `GET.DUE.AMOUNTS` lấy amount do charge phải make-due. Với subtype thường, nó gọi `AA.PaymentSchedule.GetBillPropertyAmount('DUE', SUB.TYPE, '', PROPERTY, EFFECTIVE.DATE, BILL.DETAILS, PROPERTY.AMOUNT, '', RET.ERROR)`. Với subtype `CO`, nó locate theo `ChgDetPaymentDate` và `ChgDetBillId` trong `AA.CHARGE.DETAILS` để lấy `CO.AMOUNT` và `CO.WAIVE.AMOUNT`. Sau đó `GET.WAIVE.AMOUNT` lấy thêm amount waive, `GET.SUSPEND.AMOUNTS` lấy amount suspend qua `GetBillPropertyAmount('SUSPEND', ...)`.",
+          "Bước 6: `CHECK.AMORT.SETTING` gọi `AA.Fees.CheckAmortRequired(...)` để xác định charge có cần `ACCRUE` hoặc `AMORT` hay không; nếu là charge bị adjust về 0 mà property vẫn nằm trong bill thì nó bật cờ `CHARGE.ADJUST.TO.ZERO`. Khi amount còn lại > 0, `BUILD.ACCOUNTING.UPDATES` dựng event `WAIVE`, `ACCRUE`, `AMORT`, `SP`, `DUE`, `DEF` bằng `AA.Accounting.BuildEventRec(...)`, thêm vào `MULTI.EVENT.REC`, rồi `PROCESS.ACCOUNTING.UPDATES` đẩy toàn bộ sang `AA.Accounting.AccountingManager(...)`. Khi waive hoặc accrue/amort cần đổi lịch, routine gọi `AA.Framework.AccrualDetailsHandoff(...)` với mode `CANCEL`, `AMOUNT.CHANGE` hoặc `NEW`. Nếu charge bị adjust về 0 trong `MAKEDUE`, `UPDATE.BILL.STATUS` gọi `AA.PaymentSchedule.UpdateBillStatus(...)` cho `BILL.STATUS=SETTLED` và `SETTLE.STATUS=REPAID`, rồi `WRITE.BILL.DETAILS` ghi lại bằng `AA.PaymentSchedule.UpdateBillDetails(...)`."
         ],
         flow: [
-          "Đọc và có thể ghi `AA.BILL.DETAILS` qua `AA.PaymentSchedule.UpdateBillStatus(...)` và `UpdateBillDetails(...)`.",
-          "Đọc `AA.CHARGE.DETAILS` khi subtype là `CO`.",
-          "Handoff sang accrual framework qua `AA.Framework.AccrualDetailsHandoff(...)`.",
-          "Ghi accounting qua `AA.Accounting.BuildEventRec(...)` và `AA.Accounting.AccountingManager(...)`."
+          "Đọc `AA.BILL.DETAILS` qua `AA.PaymentSchedule.GetBillDetails(...)` và có thể ghi lại bằng `UpdateBillStatus(...)` + `UpdateBillDetails(...)`.",
+          "Đọc `AA.CHARGE.DETAILS` qua `AA.ActivityCharges.ProcessChargeDetails(..., 'INIT', ...)` khi cần subtype `CO`.",
+          "Tính amount bill bằng `AA.PaymentSchedule.GetBillPropertyAmount(...)` cho các process type `DUE`, `WAIVE`, `SUSPEND`.",
+          "Dựng event bằng `AA.Accounting.BuildEventRec(...)`, còn post thực tế được đẩy sang `AA.Accounting.AccountingManager(...)`.",
+          "Điều chỉnh schedule accrual/amort bằng `AA.Framework.AccrualDetailsHandoff(...)` chứ không tự write `EB.ACCRUAL` trực tiếp trong routine này."
         ]
       },
       {
         name: "REPAY CHARGE",
         routine: "AA.CHARGE.REPAY.b",
-        summary: "Wrapper repay charge; giao phần xử lý bill đã repay cho engine bill repayment chung của payment schedule.",
+        summary: "Action repay charge chọn đúng các bill đã bị repay bởi activity hiện tại, lấy amount charge theo từng bill và từng status balance, dựng event repay/suspense/unamort rồi mới gửi sang accounting manager.",
         steps: [
-          "Bước 1: routine lấy context AAA, repayment date, participant data và property charge.",
-          "Bước 2: gọi `AA.PaymentSchedule.ProcessRepayBills(...)` với arrangement id, activity date, action, transaction reference, reversal mode và property cần repay.",
-          "Bước 3: nếu `MULTI.EVENT.REC` có dữ liệu, routine gọi `AA.Accounting.AccountingManager(...)` theo mode `VAL`, `DEL`, `AUT`.",
-          "Bước 4: nếu có participant, routine gọi `AA.Fees.ChargeRepayParticipant()`."
+          "Bước 1: wrapper `AA.CHARGE.REPAY.b` lấy `ARRANGEMENT.ID`, `ACTIVITY.DATE`, `ARR.CCY`, `ARR.ACTIVITY.ID`, `REPAY.PROPERTY`, `REVERSAL.MODE`; ở `UNAUTH` nó gọi thẳng `AA.PaymentSchedule.ProcessRepayBills(...)`, còn `DELETE/AUTH` chỉ gọi `AA.Accounting.AccountingManager(...)` để reverse hoặc authorise event đã build sẵn.",
+          "Bước 2: trong `AA.PROCESS.REPAY.BILLS.b`, routine kiểm tra action phải là `REPAY`, kiểm tra full chargeoff bằng `AA.ChargeOff.GetChargeoffDetails(...)`, rồi loop các subtype `BANK`, `CUST`, `CO` nếu cần.",
+          "Bước 3: `GET.REPAID.BILLS` lấy bill theo `REPAYMENT.REFERENCE = ARR.ACTIVITY.ID : ACTIVITY.DATE`. Với từng bill, `GET.BILL.DETAILS` đọc `AA.BILL.DETAILS`, lấy `BdBillStatus`, `BdSettleStatus`; nếu bill đã `REPAID` thì lùi về status trước đó để lấy đúng balance cần knock-off. Routine chỉ giữ những bill có `BdPaymentMethod` khớp `PAY.METHOD`.",
+          "Bước 4: `GET.PROPERTY.AMOUNT` gọi `AA.PaymentSchedule.GetBillPropertyAmount('REPAY', SUB.TYPE, '', REPAY.PROPERTY, REPAYMENT.DATE, R.BILL.DETAILS, PROPERTY.REPAY.AMOUNT, PROPERTY.REPAY.AMOUNT.LCY, RET.ERROR)` để lấy amount repay. Nếu là advance repayment, routine có nhánh riêng để build thêm event `CHARGE-MAKE.DUE-DUE`. Nếu bill chứa suspend amount, nó gom vào `SUSPEND.AMOUNT` để xử lý riêng.",
+          "Bước 5: `GET.PROPERTY.BALANCE` dùng `AA.ProductFramework.PropertyGetBalanceName(...)` để map `REPAY.STATUS` sang balance type thật. `BUILD.ACCOUNTING.UPDATES` gọi `AA.Accounting.GetAccountingEventType(...)`, set sign, amount, balance type, value date, contra target, rồi build `MULTI.EVENT.REC` theo từng bill. Sau vòng bill, nếu có suspend amount thì gọi `AA.Fees.ChargeRepaySuspense(...)` để dựng event suspense.",
+          "Bước 6: `PROCESS.UNAMORT.CHARGE` đọc `AA.ACTIVITY.BALANCES` qua `AA.Framework.ProcessActivityBalances(...)` cho balance `ACC` hoặc `DUE` (với `CO`) để xem còn unamort amount không. Nếu có, routine build thêm event cho phần unamort charge. Sau cùng wrapper gọi `AA.Accounting.AccountingManager('VAL'/'AUT'/'DEL', REPAY.PROPERTY, ACTIVITY.ACTION, REPAYMENT.DATE, MULTI.EVENT.REC hoặc '', RET.ERROR)`; nếu có participant thì chạy thêm `AA.Fees.ChargeRepayParticipant()`."
         ],
         flow: [
-          "Đọc/ghi bill chi tiết nằm trong `AA.PaymentSchedule.ProcessRepayBills(...)`.",
-          "File wrapper này chỉ đẩy accounting queue và participant processing."
+          "Đọc `AA.BILL.DETAILS` để lấy bill status, settle status, payment method và amount repay của property.",
+          "Đọc `AA.ACTIVITY.BALANCES` để xử lý phần unamort charge còn tồn tại trong `ACC` hoặc `DUE`.",
+          "Dựng event repay và suspense, sau đó post qua `AA.Accounting.AccountingManager(...)`.",
+          "File `AA.CHARGE.REPAY.b` chỉ là lớp điều phối; logic bill-level thật nằm ở `AA.PROCESS.REPAY.BILLS.b`."
         ]
       },
       {
         name: "PAY CHARGE",
         routine: "AA.CHARGE.PAY.b",
-        summary: "Payout-side accounting cho charge của deposits hoặc savings, đọc bill `PAY` và dựng event trực tiếp.",
+        summary: "Action này xử lý payout-side cho charge trên deposits/savings: chọn các bill repaid của activity hiện tại, chỉ giữ bill `PAY`, lấy amount charge, xác định balance type và dựng event debit lên suspense hoặc target accounting phù hợp.",
         steps: [
-          "Bước 1: routine lấy bill theo `REPAYMENT.REFERENCE = ARR.ACTIVITY.ID : EFFECTIVE.DATE` bằng `AA.PaymentSchedule.GetBill(...)`.",
-          "Bước 2: lặp bill có `BdPaymentMethod = PAY`, đọc `BILL.DETAILS`, rồi gọi `AA.PaymentSchedule.GetBillPropertyAmount(\"REPAY\", ...)` để lấy amount repay của property charge.",
-          "Bước 3: nếu payment method không phải `DUE`, routine gọi `AA.Tax.GetTaxConsolidatedAmount(...)`; khi `NET.ACCOUNTING` thì amount accounting được thay bằng amount consolidated.",
-          "Bước 4: gọi `AA.ProductFramework.PropertyGetBalanceName(...)` để xác định balance type và `AA.Accounting.GetAccountingEventType(..., \"PAY\", ...)` để lấy event type.",
-          "Bước 5: dựng `EVENT.REC` với sign debit, balance type, value date, contra suspense rồi gọi `AA.Accounting.AccountingManager(...)`."
+          "Bước 1: `GET.REPAID.BILLS` gọi `AA.PaymentSchedule.GetBill(...)` với `REPAYMENT.REFERENCE = ARR.ACTIVITY.ID : ACTIVITY.DATE` để lấy toàn bộ bill bị hit bởi activity hiện tại.",
+          "Bước 2: với từng bill, `GET.BILL.DETAILS` đọc `AA.BILL.DETAILS`, lấy `BdBillStatus` và `BdSettleStatus`; nếu bill đã `REPAID` thì lùi về status trước đó. Routine loại bỏ bill nếu `BdPaymentMethod` không phải `PAY`.",
+          "Bước 3: `GET.PROPERTY.AMOUNT` gọi `AA.PaymentSchedule.GetBillPropertyAmount('REPAY', '', '', REPAY.PROPERTY, REPAYMENT.DATE, R.BILL.DETAILS, PROPERTY.REPAY.AMOUNT, PROPERTY.REPAY.AMOUNT.LCY, RET.ERROR)`. Nếu bill không phải `DUE`, nó còn gọi `AA.Tax.GetTaxConsolidatedAmount(...)`; khi `NET.ACCOUNTING` bật thì amount accounting được thay bằng `CONSOLIDATED.AMOUNT`.",
+          "Bước 4: `GET.PROPERTY.BALANCE` map `REPAY.STATUS` thành balance type thật bằng `AA.ProductFramework.PropertyGetBalanceName(...)`. Nếu activity là offset và accounting property `AcpOffsetAccounting = ITEMIZE`, `ADD.ADDITIONAL.INFO` gắn `ADDITIONAL.INFO = OFFSET` để form event type riêng.",
+          "Bước 5: `BUILD.ACCOUNTING.UPDATES` gọi `AA.Accounting.GetAccountingEventType('', '', '', ACTIVITY.ACTION, 'PAY', ADDITIONAL.INFO, EVENT.TYPE, '', RET.ERROR)`, set sign `DEBIT`, amount, balance type, `valueDate = REPAYMENT.DATE`, `contraTarget = BAL*<SuspBalanceType>`, rồi build `MULTI.EVENT.REC`.",
+          "Bước 6: `PROCESS.ACCOUNTING.UPDATES` gửi event sang `AA.Accounting.AccountingManager('VAL'/'AUT'/'DEL', REPAY.PROPERTY, ACTIVITY.ACTION, REPAYMENT.DATE, MULTI.EVENT.REC hoặc '', RET.ERROR)`."
         ],
         flow: [
           "Đọc `AA.BILL.DETAILS` và tax consolidation.",
@@ -573,16 +579,16 @@ export const manualCoreOverrides: Record<string, PropertyClass> = {
       {
         name: "ACCRUE CHARGE",
         routine: "AA.CHARGE.ACCRUE.b",
-        summary: "Không tự tính công thức charge accrual; routine này lọc đúng `EB.ACCRUAL` của property charge rồi gọi engine accrual chung.",
+        summary: "Action này không tự tính tiền charge. Nó kiểm tra có cần đóng sớm amortisation hay không, nạp các record `EB.ACCRUAL` liên quan đến charge hiện tại và gọi engine `EbCommAccrual` cho đúng record.",
         steps: [
-          "Bước 1: nếu activity là `APPLYPAYMENT`, routine kiểm tra có cần đóng sớm amortisation không bằng `AA.Closure.DetermineDueAmount(...)`.",
-          "Bước 2: nếu dues đã settled hết, routine gọi `AA.Framework.AccrualDetailsHandoff(..., \"CLOSE.AMORT\", ...)` để đóng phần amortisation tại ngày payment.",
-          "Bước 3: routine nạp `EB.ACCRUAL.CONCAT` của arrangement và lặp từng `EB.ACCRUAL.ID`.",
-          "Bước 4: với mỗi accrual record, routine đọc `EB.ACCRUAL`, xác định property charge từ `EbAccChargeNo`, chỉ giữ record trùng property hiện tại.",
-          "Bước 5: nếu record chưa accrue tới ngày hiện tại hoặc là action reverse, routine gọi `AC.Fees.EbCommAccrual(EB.ACCRUAL.ID)` để chạy engine accrual thật."
+          "Bước 1: `SET.ACTIVITY.DETAILS` lấy `R.ACTIVITY.STATUS`, `R.ACTIVITY.FULL.STATUS`, `ARRANGEMENT.ID`, `PROPERTY`, `THIS.ACTIVITY`, `MASTER.ACT.CLASS`. `INITIALISE` reset `DUES.SETTLED`, `AMORT.TYPE`, `PROCESS.TYPE`.",
+          "Bước 2: nếu là `APPLYPAYMENT` do chính activity hiện tại làm master, `CHECK.TO.CLOSE.AMORTISATION` đọc property `CLOSURE` bằng `AA.ProductFramework.GetPropertyRecord(...)`; nếu closure là `AUTOMATIC/BALANCE` thì gọi `AA.Closure.DetermineDueAmount(...)` để xem các due khác đã settle hết chưa.",
+          "Bước 3: nếu `DUES.SETTLED<3> = 1`, routine gọi `AA.Framework.AccrualDetailsHandoff(ARRANGEMENT.ID, PROCESS.TYPE, 'CLOSE.AMORT', PROPERTY, PAYMENT.DATE, '', '', '', '', '', PAYMENT.DATE, RETURN.ERROR)` để đóng amortisation tại ngày payment.",
+          "Bước 4: `EB.COMM.ACCRUAL.LOAD` mở các file `F.EB.ACCRUAL`, `F.ACCOUNT.CLOSED`, set common variables `AC.Fees.setAccrueToDate(EFFECTIVE.DATE)`, `EOD`, `EOM`. `PROCESS.AMORT` lấy list `EB.ACCRUAL.ID`, đọc từng record bằng `AC.Fees.EbAccrual.Read(...)`, tách property từ `EbAccChargeNo`, rồi chỉ giữ record có property trùng `PROPERTY` hiện tại.",
+          "Bước 5: với mỗi record phù hợp, nếu `EbAccAction = R` hoặc `EbAccAccrToDate < EFFECTIVE.DATE`, routine gọi `AC.Fees.EbCommAccrual(EB.ACCRUAL.ID)` để tính/post accrual thật. `DELETE` chạy theo kiểu reverse rồi re-accrue để restore dữ liệu applypayment input đã xóa; `AUTH-REV` bị bỏ qua nếu không thỏa điều kiện applypayment."
         ],
         flow: [
-          "Đọc `EB.ACCRUAL.CONCAT`, `EB.ACCRUAL`, `ACCOUNT.CLOSED`.",
+          "Đọc `EB.ACCRUAL`, `ACCOUNT.CLOSED` và common accrual concat của arrangement.",
           "Handoff update schedule accrual qua `AA.Framework.AccrualDetailsHandoff(...)`.",
           "Tính accrual thật bằng `AC.Fees.EbCommAccrual(...)`."
         ]
@@ -590,14 +596,14 @@ export const manualCoreOverrides: Record<string, PropertyClass> = {
       {
         name: "CAPITALISE CHARGE",
         routine: "AA.CHARGE.CAPITALISE.b",
-        summary: "Capitalise charge từ bill sang principal/current balance, đồng thời xử lý waive, defer, tax, payoff và handoff accrual.",
+        summary: "Action này lấy bill `CAPITALISE` hoặc bill `DUE` có alternate method `CAP.AND.INV`, tính amount capitalise thực của charge sau khi trừ waive, xét defer/suspend/accrue/amort, dựng event accounting và cập nhật payoff details khi cần.",
         steps: [
-          "Bước 1: routine xác định payoff/closure, `AAA.ID`, product line, charge property hiện tại và charge-off status; nếu full chargeoff thì chạy subtype `BANK`, `CUST`, `CO`.",
-          "Bước 2: đọc property `CHARGE` để lấy `InternalBooking` và `AccrualRule`, rồi dựng các balance type `DEF`, `CUR`, `ACC`, `INV`, `CAP` cần cho capitalisation.",
-          "Bước 3: lấy bill `CAPITALISE`, bill deferred và cả bill `DUE` khi payment type có alternate method `CAP.AND.INV`, sau đó đọc `BILL.DETAILS` và lọc đúng bill của property hiện tại.",
-          "Bước 4: gọi `AA.PaymentSchedule.GetBillPropertyAmount(...)` để lấy amount capitalise; nếu subtype `CO` thì đọc `AA.CHARGE.DETAILS`; sau đó đọc thêm amount waive và suspend.",
-          "Bước 5: gọi `AA.Fees.CheckAmortRequired(...)`; nếu charge đang accrue hoặc amort thì routine gọi `AA.Framework.AccrualDetailsHandoff(...)` để cancel, create new hoặc amount change schedule.",
-          "Bước 6: dựng accounting cho các nhánh `CAP`, `DUE`, `INV`, `ACC`, `DEF`, `SP`, `WAIVE`, update payoff details bằng `AA.PaymentSchedule.UpdatePayoffDetails(...)` nếu đang payoff, rồi gửi vào `AA.Accounting.AccountingManager(...)`."
+          "Bước 1: `SET.ACTIVITY.DETAILS` xác định `ARRANGEMENT.ID`, `AAA.ID`, `MASTER.ACT.CLASS`, cờ payoff/closure, `ACTIVITY.ID`, `CHARGE.PROP`, `ALT.CHARGE`; `CHECK.CHARGEOFF.STATUS` xác định có phải full chargeoff để loop `BANK/CUST/CO` hay không.",
+          "Bước 2: trong mỗi vòng subtype, `INITIALISE` reset `PROPERTY.AMOUNT`, `ACCRUE.AMORT`, `NET.ACCOUNTING`, sign, participant details. `GET.INT.BOOKING` đọc property `CHARGE` để lấy `INTERNAL.BOOKING` và `ACCRUAL.RULE`. `GET.BALANCE.TYPES` resolve các balance `DEF`, principal `CUR` của `ACCOUNT`, `ACC`, `INV`, `CAP` bằng `AA.ProductFramework.PropertyGetBalanceName(...)`.",
+          "Bước 3: `GET.BILL` lấy bill `CAPITALISE` non-deferred, `CAPITALISE` deferred, và thêm bill `DUE` khi có alternate payment method `CAP.AND.INV`. Với mỗi bill, `GET.BILL.DETAILS` đọc `AA.BILL.DETAILS`, lọc theo `BdDueReference = AAA.ID` hoặc defer date, kiểm tra bill này thật sự chứa `PROPERTY` hiện tại. Nếu subtype `CO`, `GET.CHARGE.DETAILS` gọi `AA.ActivityCharges.ProcessChargeDetails(..., 'INIT', ...)` rồi locate theo `ChgDetPaymentDate` + `ChgDetBillId` để lấy `CO.AMOUNT` và `CO.WAIVE.AMOUNT`.",
+          "Bước 4: `GET.DUE.AMOUNTS` gọi `AA.PaymentSchedule.GetBillPropertyAmount(...)` với process type `CAPITALISE`, `DEFER.CAPITALISE`, `CAP.REPAY` hoặc `DUE` tùy bill. Sau đó `PROCESS.WAIVE.AMOUNT` hoặc `GET.WAIVE.AMOUNT` lấy amount waive và trừ khỏi `PROPERTY.AMOUNT`; `GET.SUSPEND.AMOUNTS` lấy suspend amount bằng `GetBillPropertyAmount('SUSPEND', ...)`. Routine còn gọi `AA.Tax.GetTaxConsolidatedAmount(...)` để xử lý net/itemized tax accounting.",
+          "Bước 5: `CHECK.AMORT.SETTING` gọi `AA.Fees.CheckAmortRequired(...)` để xác định charge đang `ACCRUE` hay `AMORT`. Nếu có waive hoặc amount về 0, `AMORTISATION.HANDOFF` gọi `AA.Framework.AccrualDetailsHandoff(...)` với mode `CANCEL`, `NEW` hoặc `AMOUNT.CHANGE` để sửa lịch accrual/amort. Nếu đang payoff và amount còn lại > 0, routine gọi `AA.PaymentSchedule.UpdatePayoffDetails(...)` để ghi `PAYOFF$CURRENT`, `PAYOFF$PAY.CURRENT` hoặc `PAYOFF$INV.DUE` cho charge này.",
+          "Bước 6: `BUILD.ACCOUNTING.UPDATES` tạo event cho các nhánh `WAIVE`, `ACCRUE`, `AMORT`, `SP`, `PAY`, `DUE`, `DEF`. Nó gọi `AA.Accounting.GetAccountingEventType(...)` và `AA.Accounting.BuildEventRec(...)`, chọn `BALANCE.TYPE`, `CONTRA.TARGET`, `SIGN`, `EVENT.DATE` theo bill method, defer flag, internal booking và subtype chargeoff. Sau đó `PROCESS.ACCOUNTING.UPDATES` gửi `MULTI.EVENT.REC` sang `AA.Accounting.AccountingManager('VAL'/'AUT'/'DEL', PROPERTY, ACTIVITY.ACTION, EFFECTIVE.DATE, MULTI.EVENT.REC hoặc '', RET.ERROR)`. Cuối cùng nếu có participant thì chạy thêm participant capitalise routine."
         ],
         flow: [
           "Đọc `AA.BILL.DETAILS` và `AA.CHARGE.DETAILS`.",
