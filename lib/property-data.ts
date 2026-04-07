@@ -1,5 +1,6 @@
 import propertyData from "@/data/property-data.json";
 import { manualCoreOverrides } from "@/lib/manual-core-overrides";
+import { manualNextOverrides } from "@/lib/manual-next-overrides";
 
 export type PropertyField = {
   name: string;
@@ -32,7 +33,11 @@ type PropertyPayload = {
 };
 
 const payload = propertyData as PropertyPayload;
-const items = payload.items.map((item) => manualCoreOverrides[item.slug] ?? item);
+const manualOverrides = {
+  ...manualCoreOverrides,
+  ...manualNextOverrides
+};
+const items = payload.items.map((item) => manualOverrides[item.slug] ?? item);
 const summary = {
   propertyClassCount: items.length,
   actionCount: new Set(items.flatMap((item) => item.actions.map((action) => action.name))).size,

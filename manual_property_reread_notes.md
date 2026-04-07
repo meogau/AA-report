@@ -620,3 +620,308 @@ Nguyên tắc:
 - Toàn bộ logic trong file là gọi `AA.Fees.ChargeAccrue()`.
 - Kết luận:
   - `ACCRUE PERIODIC.CHARGES` hiện là wrapper hoàn toàn; muốn mô tả chi tiết phải quay sang implementation dùng chung của charge accrue.
+
+## Batch tiếp theo ngoài nhóm lõi
+
+### PAYOFF
+
+#### Source vừa xác nhận
+- `T24.BP/AA.PAYOFF.FIELDS.b`
+- `T24.BP/AA.PAYOFF.CALCULATE.b`
+- `T24.BP/AA.PAYOFF.ISSUE.b`
+- `T24.BP/AA.PAYOFF.SETTLE.b`
+- `T24.BP/AA.PAYOFF.APPLY.PAY.b`
+- `T24.BP/AA.PAYOFF.CANCEL.b`
+- `T24.BP/AA.PAYOFF.SETTLE.ALL.b`
+- `T24.BP/AA.PAYOFF.DELETE.PAYOFF.BILL.b`
+- `T24.BP/AA.PAYOFF.UPDATE.b`
+
+#### Field group vừa chốt từ `FIELDS`
+- `EXPIRY.DAYS`
+  - số ngày làm việc hiệu lực của payoff bill trước khi phải cancel.
+- `SETTLE.ACT`
+  - activity thứ cấp dùng để xử lý settle payoff từ payment module.
+- `SETTLE.DUES`
+  - cờ quyết định payoff có kéo luôn các dues cần settle hay không.
+- `SETTLE.DUE.ACT`
+  - activity dùng riêng cho settle dues đi cùng payoff.
+- `TOLERANCE.PERCENT`, `TOLERANCE.CCY`, `TOLERANCE.AMOUNT`, `TOLERANCE.ACTION`
+  - bộ field tolerance cho chênh lệch payoff; action hiện thấy hỗ trợ `WRITE.OFF`.
+
+#### Action đã chốt
+- `CALCULATE`
+  - tạo payoff bill bằng cách gom tất cả bill chưa settle và tính các payment type đặc biệt:
+    - `PAYOFF$CURRENT`
+    - `PAYOFF$DUE`
+    - `PAYOFF$OVERDUE`
+    - `PAYOFF$PERDIEM`
+    - `PAYOFF$PAY`
+    - `PAYOFF$INV.DUE`
+  - đọc `AA.BILL.DETAILS`, `AA.ACCOUNT.DETAILS`, current balances của `ACCOUNT`, `INTEREST`, `CHARGE`
+  - reverse path xóa payoff bill đang có qua `AA.Payoff.DeletePayoffBill(...)`
+- `ISSUE`
+  - lấy payoff bill từ simulation hoặc live
+  - nếu cần thì xóa payoff bill live cũ trước
+  - ghi payoff bill vào live bằng `AA.PaymentSchedule.UpdateBillDetails(...)`
+  - cập nhật amount property trên bill bằng `AA.PaymentSchedule.UpdateBillPropertyAmount(...)`
+  - schedule `CANCEL-PAYOFF` trên expiry date bằng `AA.Framework.SetScheduledActivity(...)`
+  - với facility/sub-arrangements còn trigger secondary `ISSUE-PAYOFF`
+- `SETTLE`
+  - nếu không phải initiated bởi `USER` hoặc `SCHEDULED*EOD`, routine lấy payoff info bill rồi tự chọn activity `DEBIT.SETTLE` hoặc `CREDIT.SETTLE`
+  - dựng `AAA.REC` với transaction amount, local amount, linked activity
+  - append secondary activity qua `AA.Framework.SecondaryActivityManager(...)`
+  - cộng thêm offset amount bằng `AA.Payoff.GetPayoffOffsetAmount(...)`
+- `APPLY.PAY`
+  - routine riêng để cập nhật repayment reference cho các pay bills hiện có trong quá trình payoff
+- `CANCEL`
+  - invalidate payoff bill khi quá hạn
+  - xóa payoff bill/update account details liên quan
+- `UPDATE`
+  - wrapper chỉ dùng để track change condition payoff
+
+### CLOSURE
+
+#### Source vừa xác nhận
+- `T24.BP/AA.CLOSURE.FIELDS.b`
+- `T24.BP/AA.CLOSURE.VALIDATE.b`
+- `T24.BP/AA.CLOSURE.UPDATE.b`
+- `T24.BP/AA.CLOSURE.UPDATE.GUARD.b`
+- `T24.BP/AA.CLOSURE.CLOSE.b`
+- `T24.BP/AA.CLOSURE.EVALUATE.b`
+
+#### Field group vừa chốt từ `FIELDS`
+- `CLOSURE.TYPE`
+  - kiểu đóng arrangement: `MATURITY`, `BALANCE`, `DEFER.CLOSURE`.
+- `CLOSURE.PERIOD`
+  - khoảng thời gian dùng để xác định khi nào arrangement phải đóng.
+- `CLOSURE.METHOD`
+  - cách đóng là `MANUAL` hoặc `AUTOMATIC`.
+- `POSTING.RESTRICT`
+  - posting restriction sẽ được đẩy sang `ACCOUNT.CLOSURE`.
+- `CLOSURE.ACTIVITY`
+  - activity AA transaction hợp lệ để thực hiện manual closure.
+- `CLOSE.ONLINE`
+  - cờ đóng trực tiếp online khi dues đã settle.
+- `COOLING.PERIOD`, `COOLING.DATE.ADJ`
+  - bộ field xác định cooling period và cách điều chỉnh ngày cooling.
+- `DEFER.CLOSURE.PERIOD`
+  - số kỳ hoãn closure; field này `NOCHANGE`.
+- `COOLING.WAIVE.CLASS`, `COOLING.WAIVE.PROP`, `WAIVE.BILL.TYPE`
+  - bộ field chỉ ra class/property/bill type được waive trong cooling period.
+
+#### Action đã chốt
+- `CLOSE`
+  - lấy linked account bằng `AA.Framework.GetArrangementAccountId(...)`
+  - gọi `AA.Closure.DetermineDueAmount(...)` để xác định `DUE.SETTLED`
+  - với `ACCOUNTS` direct closure còn gọi `AA.Payoff.ValidateAccountClosure(...)`
+  - nếu pass, routine build `ACCOUNT.CLOSURE` record:
+    - `AclClosureReason`
+    - `AclClosureNotes`
+    - `AclPostingRestrict`
+    - `AclCloseOnline`
+  - input stage có thể validate/tạo `ACCOUNT.CLOSURE`, auth stage có thể create zero-auth closure record
+  - auth còn gọi:
+    - `AA.Settlement.SettlementBlockClosureUpdate(...)`
+    - maintain beneficiary links
+    - update CRA details
+    - update bundle hierarchy details
+    - trigger dormancy check/reset
+    - build secondary `MATURE` activity nếu còn total commitment
+- `EVALUATE`
+  - đọc `AA.ACCOUNT.DETAILS`
+  - xác định có queue invalid nào không, có defer closure date hay không
+  - gọi `AA.Closure.DetermineClosureRestriction(...)`
+  - nếu `CLOSURE.METHOD = AUTOMATIC` thì update `AA.SCHEDULED.ACTIVITY` của `CLOSE-ARRANGEMENT`
+  - với `CLOSURE.METHOD = MANUAL`, source comment cho thấy có thể update scheduled activity của `ACCOUNTS-CLOSE-ARRANGEMENT`
+  - không chạy khi effective date còn nhỏ hơn `DEFER.CLOSURE.DATE`
+- `UPDATE.GUARD`
+  - guard method cho `UPDATE`, dùng để chặn trigger update closure ở các activity không cần chạy
+- `UPDATE`
+  - wrapper update condition cho property class closure
+
+### PAYOUT.RULES
+
+#### Source vừa xác nhận
+- `T24.BP/AA.PAYOUT.RULES.FIELDS.b`
+- `T24.BP/AA.PAYOUT.RULES.VALIDATE.b`
+- `T24.BP/AA.PAYOUT.RULES.UPDATE.b`
+- `T24.BP/AA.PAYOUT.RULES.ALLOCATE.b`
+
+#### Field group vừa chốt từ `FIELDS`
+- `APPLICATION.TYPE`
+  - loại payout rule, check sang `AA.PAYMENT.RULE.TYPE`.
+- `APPLICATION.ORDER`
+  - thứ tự apply payout, ví dụ `OLDEST.FIRST`, `OLDEST.LAST`.
+- `SEQUENCE`
+  - thứ tự xử lý trong cùng rule.
+- `PROPERTY`
+  - property đích sẽ nhận payout amount.
+- `BALANCE.TYPE`
+  - balance type cụ thể dưới property đích.
+- `PROP.APPL.TYPE`
+  - hiện source cho thấy dùng option `BALANCES`.
+- `PRE.BILL.ACTIVITY`
+  - reserved cho pre-bill flow.
+- `REMAINDER.ACTIVITY`
+  - activity xử lý phần payout còn dư.
+
+#### Action đã chốt
+- `ALLOCATE`
+  - lấy payout amount từ AAA hiện tại, cả amount LCY và exchange rate
+  - gọi `AA.PaymentRules.AllocatePaymentAmount(...)` để phân bổ payout vào:
+    - `BILL.REFERENCE`
+    - `BILL.PROPERTY`
+    - `BILL.PROPERTY.DUE.AMOUNT`
+    - `BILL.PROPERTY.PAYOUT.AMOUNT`
+    - `REMAINDER.AMOUNT`
+    - `BILL.PROPERTY.AMOUNT.LCY`
+  - ghi lại payout amount vào bill bằng `AA.PayoutRules.UpdateBillPaymentAmounts(...)`
+  - nếu còn remainder:
+    - dựng `AAA.REC`
+    - set `ArrActTxnAmount`, `ArrActTxnAmountLcy`, `ArrActTxnExchRate`
+    - append activity remainder qua `AA.Framework.SecondaryActivityManager(...)`
+  - nếu có `DISBURSEMENT.BILL.AMT`, routine còn build secondary `AUTO.DISBURSE`
+- `UPDATE`
+  - wrapper update condition cho payout rules
+
+### OVERDUE
+
+#### Source vừa xác nhận
+- `T24.BP/AA.OVERDUE.FIELDS.b`
+- `T24.BP/AA.OVERDUE.VALIDATE.b`
+- `T24.BP/AA.OVERDUE.UPDATE.b`
+- `T24.BP/AA.OVERDUE.CHANGE.STATUS.b`
+- `T24.BP/AA.OVERDUE.AGE.CAP.BILLS.b`
+
+#### Field group vừa chốt từ `FIELDS`
+- `BILL.TYPE`
+  - loại bill mà overdue definition áp dụng.
+- `OVERDUE.STATUS`
+  - status overdue lấy từ virtual table `AA.OVERDUE.STATUS`.
+- `AGEING.TYPE`
+  - cách ageing theo `DAYS` hay `BILLS`.
+- `AGEING`
+  - ngưỡng ngày hoặc logic age tương ứng với status.
+- `NOTICE.DAYS`, `NOTICE.FREQ`
+  - số ngày và tần suất gửi notice/chaser.
+- `MANUAL.CHANGE`
+  - cờ đổi manual, hiện được `NOINPUT`.
+
+#### Action đã chốt
+- `CHANGE.STATUS`
+  - input stage đọc `AA.ACCOUNT.DETAILS`, lấy từng `BILL.TYPE` trong property overdue, rồi xác định ageing method
+  - với `APPLYPAYMENT`, `ADJUST.BILL`, `ADJUST.ALL`, `WRITE.OFF`, `WRITE.OFF.BILL`:
+    - lấy các bill đã repay hoặc adjusted
+    - kiểm tra có phải recalculate age status không
+    - tính `NEW.AGING.STATUS`
+    - update bill/account details
+  - với `UPDATE-OVERDUE`:
+    - lấy bill unpaid
+    - tính lại ageing status theo setup overdue mới
+  - routine đọc bill qua `AA.PaymentSchedule.GetBill(...)`, `GetBillDetails(...)`
+  - update bill bằng `AA.PaymentSchedule.UpdateBill(...)`
+  - nếu cần, append secondary activity `AGE-OVERDUE*<status>*<billtype>` và `RESUME`
+  - cuối cùng ghi lại `AA.ACCOUNT.DETAILS` và update overdue stats
+- `AGE.CAP.BILLS`
+  - action chuyên xử lý aging cho capitalised bills trong overdue flow
+
+### ACCOUNTING
+
+#### Source vừa xác nhận
+- `T24.BP/AA.ACCOUNTING.FIELDS.b`
+- `T24.BP/AA.ACCOUNTING.VALIDATE.b`
+- `T24.BP/AA.ACCOUNTING.UPDATE.b`
+- `T24.BP/AA.ACCOUNTING.ACTION.DETAILS.b`
+- `T24.BP/AA.ACCOUNTING.ACTIVITY.ALLOCATE.b`
+- `T24.BP/AA.ACCOUNTING.DISTRIBUTE.b`
+- `T24.BP/AA.ACCOUNTING.MANAGER.b`
+- `T24.BP/AA.ACCOUNTING.POST.PROCESS.b`
+
+#### Field group vừa chốt từ `FIELDS`
+- `PROPERTY`
+  - property có setup accounting riêng.
+- `ACCT.ACTION`
+  - action trong property cần map accounting rule.
+- `ACCT.RULE`
+  - allocation rule của soft accounting, check sang `AC.ALLOCATION.RULE`.
+- `BOOKING.CM`, `BOOKING.PM`, `BOOKING.PY`
+  - booking category cho current month, previous month, previous year.
+- `NEG.BOOKING.CM`, `NEG.BOOKING.PM`, `NEG.BOOKING.PY`
+  - booking category riêng cho accrual âm.
+- `CHARGEOFF.CATEGORY`, `CHGOFF.SPECIAL.INCOME`
+  - category accounting cho chargeoff.
+- `ACCRUE.AMORT`, `ACCRUE.PERIOD`
+  - setup accounting cho accrual/amort.
+
+#### Action đã chốt
+- `MANAGER`
+  - routine trung tâm build accounting entries cho AA
+  - kiểm tra arguments `TYPE`, `PROPERTY`, `ACTION`, `DATE`
+  - nếu property class là `INTEREST` thì đọc property record để check `MEMO.ONLY`
+  - trong batch + zero auth có thể đổi mode sang `SAO` theo context `ACCOUNTING.MODE`
+  - loop từng `ACCT.EVENT.ARRAY`, kiểm tra mandatory amount/sign
+  - build `EVENT.INFO`, `BASE.INFO`
+  - lấy accounting details từ property `ACCOUNTING` bằng `AA.Accounting.GetAccountingDetails(...)`
+  - update contra target, booking company, transaction codes
+  - gọi soft accounting để hoàn tất entry
+  - update local ref / our reference
+  - store accounting bằng `AA.Accounting.StoreAccounting(...)`
+- `ACTION.DETAILS`
+  - hard-coded routine trả ra expected balance prefix, sign và subtype cho activity/action
+- `ACTIVITY.ALLOCATE`
+  - nhận accounting entry từ external application, map về AA activity tương ứng và net movement theo arrangement/activity
+- `DISTRIBUTE`
+  - quyết định entry phải đi suspense account hay AA account thật trong lớp accounting distribution
+- `POST.PROCESS`
+  - hậu xử lý entry list sau AA pre-processing, giữ context đúng cho nested accounting calls
+- `UPDATE`
+  - wrapper update condition của property accounting
+
+### ACTIVITY.CHARGES
+
+#### Source vừa xác nhận
+- `T24.BP/AA.ACTIVITY.CHARGES.FIELDS.b`
+- `T24.BP/AA.ACTIVITY.CHARGES.VALIDATE.b`
+- `T24.BP/AA.ACTIVITY.CHARGES.UPDATE.b`
+- `T24.BP/AA.ACTIVITY.CHARGES.CALCULATE.b`
+- `T24.BP/AA.ACTIVITY.CHARGES.CALCULATE.COMM.b`
+- `T24.BP/AA.ACTIVITY.CHARGES.CALCULATE.GUARD.b`
+
+#### Field group vừa chốt từ `FIELDS`
+- `ACTIVITY.ID`
+  - activity sẽ bị áp activity charge.
+- `CHARGE`
+  - property charge sẽ được raise khi activity này xảy ra.
+- `APP.PERIOD`
+  - kỳ áp charge.
+- `APP.METHOD`
+  - cách áp charge: `DUE`, `CAPITALISE`, `DEFER`, `PAY`.
+- `CHARGE.AUTO.SETTLE`
+  - cờ auto settle riêng cho từng charge property.
+- `PAYMENT.TYPE`
+  - payment type đi cùng activity charge.
+- `SETTLE.ACTIVITY`
+  - activity settlement dùng cho activity charge.
+- `AUTO.SETTLE`
+  - cờ auto settle ở cấp activity charge.
+- `SYS.*`
+  - nhóm system-generated activity/charge/method/auto-settle, đều `NOINPUT`.
+
+#### Action đã chốt
+- `CALCULATE`
+  - lấy `AAA.ID`, arrangement id, effective date, `R.NEW`
+  - tìm activity hiện tại trong property `ACTIVITY.CHARGES`
+  - với từng charge:
+    - đọc `CHARGE.ID`, `APP.PERIOD`, `APP.METHOD`, `PAYMENT.TYPE`
+    - nếu đang `SETTLE-PAYOFF` trong cooling period thì gọi `AA.Closure.CheckClosureCoolingWaiver(...)`
+    - nếu không bị waive thì gọi `AA.ActivityCharges.AddChargeDetails(...)` để ghi charge vào `AA.CHARGE.DETAILS`
+  - delete/reverse path:
+    - xóa charge details qua `AA.ActivityCharges.ProcessChargeDetails(..., "DELETE", ...)`
+    - nếu charge là handoff charge thì xóa handoff data qua `AA.Framework.ProcessChargeHandoffDetails(..., "REMOVE", ...)`
+    - nếu `NEW` arrangement bị reverse thì xóa luôn evaluation details bằng `AA.PricingRules.EvaluationDetailsDelete(...)`
+- `CALCULATE.GUARD`
+  - guard method cho calculate
+- `CALCULATE.COMM`
+  - helper/common routine cho calculate
+- `UPDATE`
+  - wrapper update condition của activity charges
