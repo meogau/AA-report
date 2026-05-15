@@ -6,6 +6,7 @@ import { manualFourthOverrides } from "@/lib/manual-fourth-overrides";
 import { manualSeventhOverrides } from "@/lib/manual-seventh-overrides";
 import { manualSixthOverrides } from "@/lib/manual-sixth-overrides";
 import { manualThirdOverrides } from "@/lib/manual-third-overrides";
+import { actionPatches } from "@/lib/action-patches";
 
 export type PropertyField = {
   name: string;
@@ -48,7 +49,16 @@ const manualOverrides = {
   ...manualSixthOverrides,
   ...manualSeventhOverrides
 };
-const items = payload.items.map((item) => manualOverrides[item.slug] ?? item);
+const items = payload.items.map((item) => {
+  const base = manualOverrides[item.slug] ?? item;
+  const patch = actionPatches[item.slug];
+  if (!patch) return base;
+  return {
+    ...base,
+    ...(patch.overview !== undefined ? { overview: patch.overview } : {}),
+    ...(patch.actions !== undefined ? { actions: patch.actions } : {})
+  };
+});
 const summary = {
   propertyClassCount: items.length,
   actionCount: new Set(items.flatMap((item) => item.actions.map((action) => action.name))).size,
