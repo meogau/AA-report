@@ -6,6 +6,136 @@ type ActionPatch = {
 };
 
 export const actionPatches: Record<string, ActionPatch> = {
+  charge: {
+    actions: [
+      {
+        name: "ISSUE.BILL CHARGE",
+        routine: "AA.CHARGE.ISSUE.BILL.b",
+        summary: "Tạo bill khi một khoản phí phát sinh: ghi nhận số tiền, ngày đến hạn, phương thức xử lý và lên lịch activity MAKE.DUE tương ứng.",
+        steps: [
+          "Bước 1: Đọc thông tin chi tiết khoản phí đã được tính toán (số tiền, tiền tệ, ngày phát sinh).",
+          "Bước 2: Xác định phương thức xử lý phí: DUE (yêu cầu khách trả riêng), PAY (ngân hàng chi trả ra ngoài), hoặc CAPITALISE (cộng vào gốc khoản vay).",
+          "Bước 3: Tính ngày đến hạn — nếu có tần suất billing thì tính theo tần suất, nếu không thì đến hạn ngay.",
+          "Bước 4: Tạo bản ghi bill với đầy đủ thông tin phí, loại phí (định kỳ, phí activity, phí commission) và thêm thuế nếu có.",
+          "Bước 5: Cập nhật lịch thanh toán và đăng ký activity MAKE.DUE vào đúng ngày đến hạn.",
+          "Bước 6: Nếu arrangement có participant, tạo bill riêng cho từng bên; nếu khoản vay đã charge-off, tạo thêm bill theo dõi phần CO riêng biệt."
+        ],
+        flow: [
+          "Ghi mới AA.BILL.DETAILS với thông tin phí.",
+          "Cập nhật AA.SCHEDULED.ACTIVITY cho MAKE.DUE.",
+          "Cập nhật charge details với tham chiếu bill mới tạo."
+        ]
+      },
+      {
+        name: "MAKE.DUE CHARGE",
+        routine: "AA.CHARGE.MAKE.DUE.b / AA.PROCESS.CHARGE.MAKE.DUE.b",
+        summary: "Kích hoạt nghĩa vụ thanh toán phí: chuyển khoản phí từ trạng thái chờ sang đến hạn, dựng bút toán kế toán DUE và cập nhật trạng thái bill.",
+        steps: [
+          "Bước 1: Lấy danh sách bill phí đến hạn trong ngày hiệu lực, bao gồm cả bill deferred (phí bị hoãn từ kỳ trước).",
+          "Bước 2: Với từng bill, xác định số tiền đến hạn thực tế sau khi trừ phần đã được waive (miễn giảm) và phần đang bị suspend (tạm hoãn).",
+          "Bước 3: Xác định cách ghi nhận kế toán dựa trên phương thức của phí: phí thông thường chuyển sang balance DUE; phí có accrual/amortisation thì xử lý kỳ tích luỹ trước; phí deferred dùng balance riêng.",
+          "Bước 4: Dựng bút toán kế toán — chiều ghi nợ DUE balance (hoặc DUE.SP nếu arrangement đang suspended), chiều ghi có giảm balance tích luỹ hoặc current.",
+          "Bước 5: Nếu khoản phí đã được điều chỉnh về 0 (adjusted to zero), cập nhật bill sang trạng thái SETTLED/REPAID thay vì chờ thu.",
+          "Bước 6: Nếu arrangement bị charge-off, xử lý riêng ba lớp: phần ngân hàng (BANK), phần khách hàng (CUST) và phần đã charge-off (CO)."
+        ],
+        flow: [
+          "Đọc AA.BILL.DETAILS để lấy số tiền và trạng thái bill.",
+          "Có thể ghi lại AA.BILL.DETAILS khi bill bị adjust về 0.",
+          "Ghi bút toán kế toán qua accounting manager."
+        ]
+      },
+      {
+        name: "ACCRUE CHARGE",
+        routine: "AA.CHARGE.ACCRUE.b",
+        summary: "Phân bổ doanh thu/chi phí phí theo kỳ kế toán (accrual/amortisation): đảm bảo P&L được ghi nhận dần đều thay vì dồn một lần khi phí đến hạn.",
+        steps: [
+          "Bước 1: Xác định các kỳ accrual/amortisation đang hoạt động của khoản phí trong arrangement.",
+          "Bước 2: Nếu đây là lần thanh toán cuối (apply payment đóng hợp đồng) và tất cả khoản due đã được settle, đóng sớm kỳ amortisation tại ngày thanh toán thay vì chờ đến cuối kỳ.",
+          "Bước 3: Với từng kỳ accrual chưa xử lý, kiểm tra ngày accrue còn nhỏ hơn ngày hiệu lực mới tính — tránh ghi trùng cho cùng một kỳ.",
+          "Bước 4: Chạy engine accrual để tính số tiền P&L cần ghi nhận trong kỳ này và post bút toán chuyển từ balance dự phòng (deferred) sang thu nhập/chi phí.",
+          "Bước 5: Cập nhật bản ghi accrual đánh dấu kỳ đã xử lý."
+        ],
+        flow: [
+          "Đọc EB.ACCRUAL records của khoản phí.",
+          "Cập nhật EB.ACCRUAL đánh dấu kỳ đã accrue.",
+          "Ghi bút toán phân bổ P&L qua engine accrual."
+        ]
+      },
+      {
+        name: "CAPITALISE CHARGE",
+        routine: "AA.CHARGE.CAPITALISE.b",
+        summary: "Cộng khoản phí vào dư nợ gốc thay vì thu tiền ngay: phí được chuyển từ balance DUE/accrual sang principal của khoản vay, làm tăng số tiền khách hàng còn nợ.",
+        steps: [
+          "Bước 1: Lấy danh sách bill phí được đánh dấu CAPITALISE (hoặc bill DUE có phương thức CAP.AND.INV — vừa cộng gốc vừa lập hoá đơn).",
+          "Bước 2: Với từng bill, xác định số tiền capitalise thực tế sau khi trừ phần waive; nếu capitalise kèm hoá đơn (CAP.AND.INV) thì tách riêng phần gốc và phần invoice.",
+          "Bước 3: Nếu phí đang tích luỹ (accrual), xử lý đóng kỳ accrual trước khi cộng vào gốc; điều chỉnh số tiền nếu cần so với kỳ accrual hiện tại.",
+          "Bước 4: Dựng bút toán kế toán chuyển phí sang balance principal (CUR của ACCOUNT) — giảm balance DUE/ACC của phí, tăng dư nợ gốc.",
+          "Bước 5: Nếu arrangement đang trong quy trình tất toán sớm (payoff), cộng phần capitalise vào báo giá payoff.",
+          "Bước 6: Nếu khoản vay bị charge-off, xử lý lần lượt ba lớp BANK, CUST, CO với balance type tương ứng."
+        ],
+        flow: [
+          "Đọc AA.BILL.DETAILS và AA.CHARGE.DETAILS.",
+          "Cập nhật payoff bill nếu đang trong flow tất toán sớm.",
+          "Ghi bút toán kế toán capitalise qua accounting manager."
+        ]
+      },
+      {
+        name: "REPAY CHARGE",
+        routine: "AA.CHARGE.REPAY.b",
+        summary: "Ghi nhận việc khách hàng thanh toán khoản phí đã đến hạn: giảm balance DUE của phí và cập nhật trạng thái bill sang đã trả.",
+        steps: [
+          "Bước 1: Xác định những bill phí nào đã được thanh toán trong activity hiện tại (tra theo repayment reference).",
+          "Bước 2: Với từng bill, xác định số tiền được trả và trạng thái aging của bill (current, overdue, charge-off) để biết cần knock off balance nào.",
+          "Bước 3: Nếu phí được trả bao gồm cả phần đang bị suspend, xử lý giải phóng phần suspend tương ứng.",
+          "Bước 4: Dựng bút toán kế toán: giảm balance DUE (hoặc aging balance tương ứng), ghi có vào tài khoản suspense thu tiền.",
+          "Bước 5: Nếu phí có phần chưa amortise hết (unamortised charge) tại thời điểm trả sớm, dựng thêm bút toán ghi nhận nhanh phần còn lại.",
+          "Bước 6: Nếu arrangement bị charge-off, xử lý thêm bút toán knock off phần CO trên sổ P&L charge-off."
+        ],
+        flow: [
+          "Đọc AA.BILL.DETAILS theo repayment reference.",
+          "Đọc AA.ACTIVITY.BALANCES để xử lý phần unamortised charge.",
+          "Ghi bút toán kế toán thu phí qua accounting manager."
+        ]
+      },
+      {
+        name: "PAY CHARGE",
+        routine: "AA.CHARGE.PAY.b",
+        summary: "Hạch toán chi trả phí ra ngoài trong sản phẩm tiền gửi/tiết kiệm: khi ngân hàng trả phí (ví dụ phí dịch vụ trả cho bên thứ ba), giảm balance phí và ghi nhận nghĩa vụ chi trả.",
+        steps: [
+          "Bước 1: Lấy danh sách bill phí đã được xử lý trong activity payout hiện tại.",
+          "Bước 2: Lọc lấy những bill có phương thức PAY (chi trả ra ngoài), loại bỏ những bill loại DUE.",
+          "Bước 3: Xác định số tiền phí cần chi trả; nếu phí có thành phần thuế, tính số tiền thuế tổng hợp tương ứng.",
+          "Bước 4: Xác định balance type thực tế cần giảm (current, overdue theo trạng thái bill).",
+          "Bước 5: Dựng bút toán kế toán: ghi nợ balance phí (giảm nghĩa vụ), ghi có vào tài khoản suspense thanh toán ra ngoài.",
+          "Bước 6: Đẩy bút toán vào hệ thống kế toán."
+        ],
+        flow: [
+          "Đọc AA.BILL.DETAILS để lấy bill PAY của phí.",
+          "Không ghi bill trực tiếp trong routine này.",
+          "Ghi bút toán kế toán qua accounting manager."
+        ]
+      },
+      {
+        name: "UPDATE CHARGE",
+        routine: "AA.CHARGE.UPDATE.b",
+        summary: "Cập nhật điều kiện phí khi có thay đổi (số tiền, rate, waive, suppress): tính lại lịch amortisation và lên lịch hết hạn điều chỉnh nếu cần.",
+        steps: [
+          "Bước 1: So sánh điều kiện phí cũ và mới để phát hiện thay đổi.",
+          "Bước 2: Nếu số tiền phí thay đổi và phí đang trong giai đoạn amortisation, tính lại lịch amortisation còn lại.",
+          "Bước 3: Nếu cờ tham chiếu hạn mức (REFER.LIMIT) thay đổi, kích hoạt activity phụ để rà soát lại tài khoản.",
+          "Bước 4: Nếu điều chỉnh phí có ngày hết hạn (ví dụ: miễn phí 3 tháng đầu), lên lịch activity EXPIRE.ADJUSTMENT để hệ thống tự hoàn nguyên về mức phí ban đầu.",
+          "Bước 5: Cập nhật cờ suppress nếu phí đang được tạm dừng hoặc khôi phục.",
+          "Bước 6: Ghi nhận thay đổi condition để theo dõi lịch sử."
+        ],
+        flow: [
+          "Cập nhật AA.SCHEDULED.ACTIVITY cho EXPIRE.ADJUSTMENT nếu có ngày hết hạn.",
+          "Cập nhật lịch accrual/amortisation nếu số tiền phí thay đổi.",
+          "Ghi nhận change condition."
+        ]
+      }
+    ]
+  },
+
   account: {
     actions: [
       {
