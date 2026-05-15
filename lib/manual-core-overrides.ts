@@ -4,6 +4,7 @@ export const manualCoreOverrides: Record<string, PropertyClass> = {
   account: {
     name: "ACCOUNT",
     slug: "account",
+    overview: "Property cốt lõi của mọi arrangement, quản lý thông tin tài khoản ngân hàng được tạo khi kích hoạt sản phẩm. Định nghĩa danh mục tài khoản (CATEGORY), tiền tệ (CURRENCY), tiêu đề tài khoản, hạn chế giao dịch (POSTING.RESTRICT), cấu hình số IBAN và cân bằng kế toán. Mọi action tài chính trong arrangement đều đi qua ACCOUNT để xác định balance type và thực hiện hạch toán. Các action chính: DEBIT ghi nợ, CREDIT ghi có, REPAY thu hồi nợ gốc theo bill đến hạn, MAINTAIN đồng bộ trạng thái và dữ liệu điều kiện.",
     fields: [
       {
         name: "AA.AC.CATEGORY",
@@ -621,6 +622,7 @@ export const manualCoreOverrides: Record<string, PropertyClass> = {
   interest: {
     name: "INTEREST",
     slug: "interest",
+    overview: "Quản lý toàn bộ cơ chế tính lãi suất của arrangement. Hỗ trợ 5 loại lãi suất: FIXED (cố định), FLOATING (thả nổi theo index thị trường), PERIODIC (reset theo chu kỳ với bảng lãi suất định kỳ), CUSTOM (gọi routine tuỳ chỉnh) và LINKED (liên kết sang arrangement khác). Bao gồm cấu hình day basis, accrual rule, rate tier theo SINGLE/BAND/LEVEL và margin bổ sung. Action ACCRUE tính và tích luỹ lãi hàng ngày; MAKE.DUE chuyển lãi tích luỹ sang trạng thái đến hạn và phát sinh bill.",
     fields: [
       {
         name: "AA.INT.DAY.BASIS",
@@ -780,6 +782,7 @@ export const manualCoreOverrides: Record<string, PropertyClass> = {
   "payment-rules": {
     name: "PAYMENT.RULES",
     slug: "payment-rules",
+    overview: "Định nghĩa thứ tự ưu tiên phân bổ thanh toán (payment allocation hierarchy). Khi có khoản tiền đến, hệ thống duyệt qua danh sách theo FINANCIAL.STATUS (PERFORMING/SUSPENDED/RESTRUCTURE/BOTH) và SEQUENCE để xác định property và balance type nào được ưu tiên thanh toán trước. Mỗi mục chỉ rõ property cần trả (PROPERTY), loại số dư (BALANCE.TYPE) và cách xử lý phần dư (REMAINDER.ACTIVITY). Action ALLOCATE thực thi phân bổ; CREATE.DUE tạo bill đến hạn theo lịch.",
     fields: [
       {
         name: "AA.PAYRULE.FINANCIAL.STATUS",
@@ -933,6 +936,7 @@ export const manualCoreOverrides: Record<string, PropertyClass> = {
   "payment-schedule": {
     name: "PAYMENT.SCHEDULE",
     slug: "payment-schedule",
+    overview: "Quản lý lịch thanh toán của arrangement. Định nghĩa loại thanh toán (PAYMENT.TYPE), phương thức (PAYMENT.METHOD: DUE/CAPITALISE/PAY/MAINTAIN), tần suất (PAYMENT.FREQ), ngày cơ sở và điều kiện phát sinh bill. Hỗ trợ lịch linh hoạt theo phần trăm (PROG.PAY.PERC), tái tính toán khi có thay đổi (RECALCULATE), gộp bill (BILLS.COMBINED) và dừng phát sinh (ISSUE.BILL). Action MAKE.DUE chuyển amount sang trạng thái đến hạn; ISSUE.BILL tạo invoice gửi khách hàng.",
     fields: [
       {
         name: "AA.PS.BASE.DATE",

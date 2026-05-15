@@ -370,6 +370,30 @@ textarea {
   gap: 18px;
 }
 
+.property-overview {
+  padding: 16px 20px;
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.overview-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-strong);
+  margin: 0 0 8px;
+}
+
+.overview-body {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--ink);
+  margin: 0;
+}
+
 .detail-tabs {
   display: flex;
   gap: 12px;

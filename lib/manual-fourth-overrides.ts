@@ -782,6 +782,7 @@ export const manualFourthOverrides: Record<string, PropertyClass> = {
   "term-amount": {
     name: "TERM.AMOUNT",
     slug: "term-amount",
+    overview: "Quản lý số tiền gốc và kỳ hạn của arrangement. Định nghĩa AMOUNT (số tiền), TERM (kỳ hạn), MATURITY.DATE (ngày đáo hạn) và cơ chế revolving (REVOLVING: NO/PAYMENT/PREPAYMENT). Hỗ trợ tranche (rút vốn nhiều đợt theo TRANCHE.START.DATE/TRANCHE.END.DATE/TRANCHE.AMOUNT), commitment schedule, và utilisation tracking. Action DRAW giải ngân, INCREASE/DECREASE thay đổi hạn mức, MATURE xử lý đáo hạn, REDEEM tất toán trước hạn, SUSPEND/RESUME tạm dừng và khôi phục.",
     fields: [
       {
         name: "AA.AMT.AMOUNT",

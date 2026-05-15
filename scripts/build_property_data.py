@@ -20,6 +20,9 @@ FIELD_OPT_RE = re.compile(r'OUT\.T<Z,2>\s*=\s*"([^"]*)"')
 FIELD_CHECK_RE = re.compile(r'OUT\.CHECKFILE<Z>\s*=\s*"([^"]*)"')
 INSERT_RE = re.compile(r"\b([A-Z0-9]+\.[A-Z0-9.]+)\s+TO\s+(\d+)")
 LABEL_RE = re.compile(r"^\s*([A-Z0-9][A-Z0-9.\-]*)\s*:\s*$")
+CALL_RE = re.compile(r"\bCALL\s+([A-Z0-9.]+)\s*\(")
+COMPONENT_CALL_RE = re.compile(r"\b(AA(?:\.[A-Za-z0-9]+)+)\s*\(")
+GOSUB_RE = re.compile(r"\bGOSUB\s+([A-Z0-9.\-]+)")
 
 
 def slugify(value: str) -> str:
@@ -32,6 +35,11 @@ def read_text(path: Path) -> str:
 
 def read_utf8(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def split_camel(value: str) -> list[str]:
+    chunks = re.findall(r"[A-Z]+(?=[A-Z][a-z]|$)|[A-Z]?[a-z]+|[0-9]+", value)
+    return [chunk.upper() for chunk in chunks if chunk]
 
 
 def load_seed() -> list[dict]:
@@ -180,6 +188,11 @@ def class_file_lines(path_str: str) -> tuple[str, ...]:
     return tuple(read_text(Path(path_str)).splitlines())
 
 
+@lru_cache(maxsize=None)
+def all_bp_files() -> tuple[Path, ...]:
+    return tuple(sorted(T24_ROOT.glob("*.b")))
+
+
 def build_dictionary_sentence(field_name: str, field_def: dict | None, slot: int) -> list[str]:
     notes = [f"Trường nằm ở vị trí `{slot}` trong record của property class."]
     if not field_def:
@@ -300,6 +313,168 @@ def parse_labels(lines: list[str]) -> dict[str, tuple[int, int]]:
         end = order[pos + 1][1] if pos + 1 < len(order) else len(lines)
         regions[label] = (start + 1, end)
     return regions
+
+
+def extract_gosubs(raw_lines: list[str]) -> list[str]:
+    results: list[str] = []
+    seen: set[str] = set()
+    for line in raw_lines:
+        match = GOSUB_RE.search(line)
+        if not match:
+            continue
+        label = match.group(1)
+        if label not in seen:
+            seen.add(label)
+            results.append(label)
+    return results
+
+
+def candidate_routine_names(expr: str) -> list[str]:
+    names: list[str] = []
+    parts = expr.split(".")
+
+    if expr.startswith("AA.") and len(parts) >= 3:
+        method_tokens = split_camel(parts[-1])
+        if method_tokens:
+            names.append("AA." + ".".join(method_tokens))
+        if len(parts) >= 3:
+            names.append("AA." + parts[-2].upper() + "." + ".".join(method_tokens))
+        if len(parts) > 2:
+            merged = []
+            for part in parts[1:]:
+                merged.extend(split_camel(part))
+            if merged:
+                names.append("AA." + ".".join(merged))
+    else:
+        names.append(expr)
+
+    unique: list[str] = []
+    seen: set[str] = set()
+    for item in names:
+        item = item.strip(".")
+        if item and item not in seen:
+            seen.add(item)
+            unique.append(item)
+    return unique
+
+
+@lru_cache(maxsize=None)
+def resolve_routine_file(expr: str) -> str:
+    for routine_name in candidate_routine_names(expr):
+        exact = T24_ROOT / f"{routine_name}.b"
+        if exact.exists():
+            return str(exact)
+
+    wanted_tokens: list[str] = []
+    for routine_name in candidate_routine_names(expr):
+        wanted_tokens = [token for token in routine_name.split(".") if token]
+        if wanted_tokens:
+            break
+
+    if not wanted_tokens:
+        return ""
+
+    best_path = ""
+    best_score: tuple[int, int] | None = None
+    for path in all_bp_files():
+        stem_tokens = path.stem.split(".")
+        if not all(token in stem_tokens for token in wanted_tokens):
+            continue
+        score = (sum(1 for token in wanted_tokens if token in stem_tokens), -len(stem_tokens))
+        if best_score is None or score > best_score:
+            best_score = score
+            best_path = str(path)
+
+    return best_path
+
+
+def extract_external_calls(raw_lines: list[str]) -> list[str]:
+    calls: list[str] = []
+    seen: set[str] = set()
+
+    for line in raw_lines:
+        for match in CALL_RE.finditer(line):
+            name = match.group(1)
+            if name not in seen:
+                seen.add(name)
+                calls.append(name)
+        for match in COMPONENT_CALL_RE.finditer(line):
+            name = match.group(1)
+            if name not in seen:
+                seen.add(name)
+                calls.append(name)
+    return calls
+
+
+def summarize_external_routine(path: Path) -> list[str]:
+    lines = read_text(path).splitlines()
+    regions = parse_labels(lines)
+    notes = [f"Đi vào routine `{path.name}`."]
+
+    desc = top_description(lines)
+    if desc:
+        notes.append(desc)
+
+    for label in ["MAIN.PARA", "MAIN", "SET.ACTIVITY.DETAILS", "MAIN.PROCESS", "PROCESS.ACTION", "INITIALISE", "PROCESS", "PROCESS.INPUT.ACTION"]:
+        region = region_lines(lines, regions, label)
+        if not region:
+            continue
+        region_notes = summarize_region(label, region)
+        if region_notes:
+            notes.append(f"`{label}`: " + " ".join(region_notes[:3]))
+        if len(notes) >= 4:
+            break
+
+    return notes
+
+
+def collect_label_steps(
+    label: str,
+    lines: list[str],
+    labels: dict[str, tuple[int, int]],
+    current_path: Path,
+    seen_labels: set[str],
+    seen_external_files: set[str],
+    depth: int = 0,
+) -> list[str]:
+    if label in seen_labels or depth > 2:
+        return []
+    seen_labels.add(label)
+
+    region = region_lines(lines, labels, label)
+    if not region:
+        return []
+
+    results: list[str] = []
+    region_notes = summarize_region(label, region)
+    if region_notes:
+        results.append(f"`{label}`: " + " ".join(region_notes[:4]))
+
+    for child_label in extract_gosubs(region):
+        if child_label == label:
+            continue
+        results.extend(
+            collect_label_steps(
+                child_label,
+                lines,
+                labels,
+                current_path,
+                seen_labels,
+                seen_external_files,
+                depth + 1,
+            )
+        )
+
+    for expr in extract_external_calls(region):
+        resolved = resolve_routine_file(expr)
+        if not resolved or resolved == str(current_path) or resolved in seen_external_files:
+            continue
+        seen_external_files.add(resolved)
+        ext_notes = summarize_external_routine(Path(resolved))
+        if ext_notes:
+            results.append(" | ".join(ext_notes[:4]))
+
+    return results
 
 
 def region_lines(lines: list[str], regions: dict[str, tuple[int, int]], label: str) -> list[str]:
@@ -449,13 +624,22 @@ def build_action_entry(class_name: str, action_heading: str) -> dict:
     ]
 
     steps: list[str] = []
+    seen_child_labels: set[str] = set()
+    seen_external_files: set[str] = set()
     for label in ordered_labels:
-        region = region_lines(lines, labels, label)
-        if not region:
+        if label in seen_child_labels:
             continue
-        region_notes = summarize_region(label, region)
-        if region_notes:
-            steps.append(f"`{label}`: " + " ".join(region_notes))
+        steps.extend(
+            collect_label_steps(
+                label,
+                lines,
+                labels,
+                path,
+                seen_child_labels,
+                seen_external_files,
+                0,
+            )
+        )
 
     flow: list[str] = []
     for label in ordered_labels:

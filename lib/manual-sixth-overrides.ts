@@ -842,6 +842,7 @@ export const manualSixthOverrides: Record<string, PropertyClass> = {
   "activity-mapping": {
     name: "ACTIVITY.MAPPING",
     slug: "activity-mapping",
+    overview: "Ánh xạ mã giao dịch T24 (TRANSACTION code) sang activity trong hệ thống AA. Mỗi transaction code được gán một activity tương ứng (TXN.ACTIVITY) để xác định luồng xử lý kế toán khi giao dịch phát sinh. Hỗ trợ default activity cho giao dịch có (DEF.CR.ACTIVITY) và nợ (DEF.DB.ACTIVITY), cùng với mapping theo sự kiện cụ thể (EVENT.REF → EVENT.ACTIVITY) từ phiên bản R20. Service group (TXN.SERVICE.GROUP/DEF.CR.SERVICE.GROUP/DEF.DB.SERVICE.GROUP) cho phép nhóm xử lý các activity theo dịch vụ.",
     fields: [
       {
         name: "AA.ACM.TRANSACTION",

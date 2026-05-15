@@ -148,6 +148,7 @@ export const manualNextOverrides: Record<string, PropertyClass> = {
   closure: {
     name: "CLOSURE",
     slug: "closure",
+    overview: "Quản lý quy trình đóng arrangement. Xác định loại đóng (CLOSURE.TYPE: MATURITY khi đáo hạn, BALANCE khi số dư về 0, DEFER.CLOSURE trì hoãn đóng), phương thức (MANUAL/AUTOMATIC), cooling period cho phép rút lại và danh sách activity cần chạy khi đóng (CLOSURE.ACTIVITY). Action CLOSE thực thi quy trình đóng toàn bộ; EVALUATE kiểm tra điều kiện và tính toán trước khi đóng; UPDATE ghi nhận thay đổi trạng thái closure.",
     fields: [
       {
         name: "AA.CLS.CLOSURE.TYPE",
@@ -296,6 +297,7 @@ export const manualNextOverrides: Record<string, PropertyClass> = {
   "payout-rules": {
     name: "PAYOUT.RULES",
     slug: "payout-rules",
+    overview: "Định nghĩa thứ tự phân bổ khi thực hiện chi trả ra ngoài (payout allocation hierarchy). Xác định property nào (PROPERTY) và balance type nào (BALANCE.TYPE) được xử lý theo thứ tự nào khi thực hiện payout, tương tự PAYMENT.RULES nhưng áp dụng cho luồng outgoing. Thường dùng trong sản phẩm tiết kiệm và đầu tư khi hoàn trả lãi hay gốc cho khách hàng. Action ALLOCATE thực thi phân bổ payout; UPDATE cập nhật trạng thái sau khi phân bổ.",
     fields: [
       {
         name: "AA.PAYOUT.APPLICATION.TYPE",
@@ -484,6 +486,7 @@ export const manualNextOverrides: Record<string, PropertyClass> = {
   accounting: {
     name: "ACCOUNTING",
     slug: "accounting",
+    overview: "Định nghĩa quy tắc hạch toán kế toán cho từng property của arrangement. Mỗi mục chứa mapping giữa action (ACCT.ACTION) và allocation rule (ACCT.RULE), cùng các category tài khoản booking tháng hiện tại (BOOKING.CM), tháng trước (BOOKING.PM) và năm trước (BOOKING.PY). Cấp property class (PC.ACTION/PC.RULE) định nghĩa ở template, cấp property ghi đè ở arrangement cụ thể. Hỗ trợ amortization phí (ACCRUE.AMORT), charge-off (CHARGEOFF.CATEGORY), consolidation theo NET/ITEMIZED và booking theo công ty con (BOOKING.COMPANY).",
     fields: [
       {
         name: "AA.ACP.PROPERTY",

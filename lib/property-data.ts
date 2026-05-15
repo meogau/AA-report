@@ -24,6 +24,7 @@ export type PropertyAction = {
 export type PropertyClass = {
   name: string;
   slug: string;
+  overview?: string;
   fields: PropertyField[];
   actions: PropertyAction[];
 };

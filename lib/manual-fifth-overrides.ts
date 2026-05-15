@@ -92,6 +92,7 @@ export const manualFifthOverrides: Record<string, PropertyClass> = {
   customer: {
     name: "CUSTOMER",
     slug: "customer",
+    overview: "Quản lý thông tin tất cả các bên tham gia arrangement: khách hàng chính (CUSTOMER), vai trò kế thừa (CUSTOMER.ROLE), phân bổ thuế (TAX.LIABILITY.PERC), phân bổ hạn mức tín dụng (LIMIT.ALLOC.PERC), phân bổ GL (GL.ALLOC.PERC) và các bên liên quan khác (OTHER.PARTY/ROLE). Property này kiểm soát quyền, trách nhiệm và hạn mức của từng thành viên trong arrangement. Bao gồm các action quản lý ARRANGEMENT record của khách hàng, kiểm tra bundle, xác thực giới hạn GL/LIMIT và xử lý quan hệ CRA.",
     fields: [
       {
         name: "AA.CUS.CUSTOMER",

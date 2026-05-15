@@ -35,6 +35,13 @@ export default async function PropertyClassDetailPage({
               </div>
             </div>
 
+            {item.overview ? (
+              <div className="property-overview">
+                <h2 className="overview-title">Ý nghĩa chung</h2>
+                <p className="overview-body">{item.overview}</p>
+              </div>
+            ) : null}
+
             <PropertyDetailTabs item={item} />
           </div>
         </div>
